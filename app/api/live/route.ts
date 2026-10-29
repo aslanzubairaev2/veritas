@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   if (!rateLimit(`live:${clientIp(req)}`, 6, 60 * 60_000)) return tooMany();
 
   const { lang } = (await req.json().catch(() => ({}))) as { lang?: string };
-  const language = lang === "ru" ? "ru" : "de";
+  const language = lang === "ru" || lang === "en" ? lang : "de";
   const maxSeconds = env.callMaxSeconds();
 
   try {
@@ -32,7 +32,10 @@ export async function POST(req: Request) {
             systemInstruction: voiceInstructions(language),
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: env.liveVoice() } } },
             tools: [{ functionDeclarations: [callbackTool] }],
-            inputAudioTranscription: {},
+            inputAudioTranscription: {
+              languageCodes:
+                language === "ru" ? ["ru-RU", "de-DE", "en-US"] : language === "en" ? ["en-US", "de-DE", "ru-RU"] : ["de-DE", "ru-RU", "en-US"],
+            },
             outputAudioTranscription: {},
           },
         },

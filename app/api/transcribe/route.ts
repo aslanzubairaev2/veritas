@@ -29,7 +29,8 @@ export async function POST(req: Request) {
   }
   if (audio.size > 8 * 1024 * 1024) return Response.json({ error: "Aufnahme zu lang." }, { status: 413 });
 
-  const lang = form?.get("lang") === "ru" ? "ru" : "de";
+  const l = form?.get("lang");
+  const lang = l === "ru" || l === "en" ? l : "de";
   const mimeType = (audio.type || "audio/webm").split(";")[0];
   const data = Buffer.from(await audio.arrayBuffer()).toString("base64");
   const audioPart = { inlineData: { mimeType, data } };
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
       contents: [{ role: "user", parts: [audioPart] }],
       config: {
         audioTranscriptionConfig: {
-          languageCodes: lang === "ru" ? ["ru-RU", "de-DE"] : ["de-DE", "ru-RU"],
+          languageCodes: lang === "ru" ? ["ru-RU", "de-DE", "en-US"] : lang === "en" ? ["en-US", "de-DE", "ru-RU"] : ["de-DE", "ru-RU", "en-US"],
           customVocabulary: VOCAB,
         },
       },
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
               audioPart,
               {
                 text:
-                  "Schreibe wörtlich auf, was in dieser Aufnahme gesagt wird, in der gesprochenen Sprache (meist Russisch oder Deutsch). " +
+                  "Schreibe wörtlich auf, was in dieser Aufnahme gesagt wird, in der gesprochenen Sprache (Russisch, Deutsch oder Englisch). " +
                   `Fachbegriffe richtig schreiben: ${VOCAB.join(", ")}. Gib NUR den Text zurück, ohne Kommentar. Wenn nichts gesagt wird, gib nichts zurück.`,
               },
             ],

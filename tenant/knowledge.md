@@ -73,6 +73,20 @@ Kosten der WGs nennt die Website nicht – dazu bitte individuelles Angebot im B
 - Hilfe nur am Wochenende oder im Urlaub der Angehörigen? Möglich über Kombinationsleistung (Sachleistung + Pflegegeld) oder Verhinderungspflege.
 - Muss ich ins Pflegeheim, wenn ich mehr Pflege brauche? Nein. Solange möglich, bleibt man zu Hause; bei mehr Bedarf kann ein höherer Pflegegrad beantragt werden. Alternativ bieten die VERITAS-WGs eine Lösung ohne Pflegeheim.
 
+## Allgemeines Wissen: Pflegegrad und Pflegeversicherung (ohne Euro-Beträge)
+Allgemeine Regeln, gelten unabhängig vom Pflegedienst. Für Beratung nutzen; Euro-Beträge nur aus „Aktuelle gesetzliche Werte 2026“.
+- Antrag: bei der Pflegekasse (sitzt bei der eigenen Krankenkasse). Ein Anruf oder formloses Schreiben reicht. Leistungen gibt es ab dem Monat der Antragstellung – deshalb früh beantragen, auch wenn Unterlagen noch fehlen.
+- Begutachtung: Der Medizinische Dienst (bei Privatversicherten: Medicproof) kommt nach Hause oder meldet sich telefonisch. Geprüft wird, wie selbstständig die Person im Alltag ist – nicht die Diagnose. Sechs Bereiche: Mobilität; Verstehen und Sprechen (Orientierung, Gedächtnis); Verhalten und psychische Problemlagen (z. B. nächtliche Unruhe); Selbstversorgung (Waschen, Anziehen, Essen, Toilette); Umgang mit Therapien (Medikamente, Arztbesuche, Verbände); Alltag und soziale Kontakte.
+- Vorbereitung auf die Begutachtung: ein bis zwei Wochen ein Pflegetagebuch führen (wobei und wie oft geholfen wird, auch nachts); Arztberichte, Medikamentenplan und Krankenhausberichte bereitlegen; eine vertraute Person sollte dabei sein; ehrlich den schlechten Alltag schildern, nicht „zusammenreißen“. VERITAS begleitet auf Wunsch die Begutachtung.
+- Entscheidung: Die Pflegekasse muss in der Regel innerhalb von 25 Arbeitstagen nach dem Antrag entscheiden.
+- Widerspruch: Ist der Pflegegrad zu niedrig oder abgelehnt, kann man innerhalb eines Monats nach dem Bescheid schriftlich Widerspruch einlegen. Das Gutachten kann man bei der Pflegekasse anfordern.
+- Verschlechterung: Wird mehr Hilfe nötig, kann jederzeit ein höherer Pflegegrad beantragt werden (Höherstufungsantrag).
+- Arten von Leistungen: Pflegegeld (wenn Angehörige pflegen, Geld an die pflegebedürftige Person); Pflegesachleistung (ein Pflegedienst wie VERITAS rechnet direkt mit der Kasse ab); Kombinationsleistung (beides gemischt, z. B. Pflegedienst morgens, Familie am Abend); Entlastungsbetrag (für Betreuung und Haushaltshilfe, ab Pflegegrad 1); Verhinderungspflege und Kurzzeitpflege (wenn pflegende Angehörige ausfallen).
+- Weitere Hilfen: Pflegehilfsmittel zum Verbrauch (z. B. Handschuhe, Bettschutz) und Zuschüsse für den Umbau der Wohnung (z. B. bodengleiche Dusche) über die Pflegekasse; Hausnotruf kann bei Pflegegrad bezuschusst werden.
+- Pflichtberatung: Wer nur Pflegegeld bekommt, braucht regelmäßig einen Beratungseinsatz nach § 37 Abs. 3 SGB XI (bei Pflegegrad 2–3 halbjährlich, bei 4–5 vierteljährlich) – VERITAS bietet diese Beratungseinsätze an.
+- Kostenlose unabhängige Pflegeberatung gibt es außerdem bei der Pflegekasse und in den Berliner Pflegestützpunkten.
+- Häusliche Krankenpflege (z. B. Spritzen, Verbände) verordnet der Arzt; sie wird von der Krankenkasse bezahlt, auch ohne Pflegegrad.
+
 ## Aktuelle gesetzliche Werte 2026
 Allgemeine Regeln, nicht von der VERITAS-Website. Immer mit dem Zusatz „Stand 2026, ohne Gewähr“ nennen.
 - Pflegesachleistung pro Monat (für Pflege durch einen Pflegedienst): Pflegegrad 2: 796 €, Pflegegrad 3: 1.497 €, Pflegegrad 4: 1.859 €, Pflegegrad 5: 2.299 €. Pflegegrad 1: keine Sachleistung, aber Entlastungsbetrag.

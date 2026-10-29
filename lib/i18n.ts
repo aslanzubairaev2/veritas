@@ -1,4 +1,5 @@
-export type Lang = "de" | "ru";
+export type Lang = "de" | "ru" | "en";
+export const LANGS: Lang[] = ["de", "ru", "en"];
 
 export const T = {
   de: {
@@ -97,16 +98,71 @@ export const T = {
     unavailable: "Помощник ещё не настроен. Пожалуйста, позвоните напрямую:",
     close: "Закрыть",
   },
+  en: {
+    langName: "English",
+    hello: (name: string) =>
+      `Hello! I'm the digital care advisor of ${name}. Ask me about home care, care levels (Pflegegrad), costs or our offices – by typing or by voice.`,
+    callTitle: "Talk to the advisor",
+    callSub: "Like a phone call – just start talking",
+    callStart: "Start conversation",
+    callEnd: "Hang up",
+    callConnecting: "Connecting …",
+    callListening: "Listening",
+    callSpeaking: "Advisor is speaking",
+    callEnded: "Call ended",
+    callTimeLeft: (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} min left`,
+    callMicDenied: "The microphone is blocked. Please allow access in your browser settings.",
+    callFailed: "The connection didn't work. Please try again or write to us.",
+    callLeadSaved: "Callback request saved",
+    or: "or type",
+    placeholder: "Your question …",
+    send: "Send",
+    micHold: "Tap to speak",
+    micStop: "Tap to send",
+    micListening: "Listening … tap again when you're done.",
+    micKeyboard: "Tap the microphone on your keyboard and speak.",
+    transcribing: "Recognising …",
+    readAloud: "Read answers aloud",
+    thinking: "One moment …",
+    slow: "The AI service is very busy right now. The answer is on its way …",
+    errorGeneric: "That didn't work just now. Please try again or call:",
+    contact: "Contact",
+    call: "Call",
+    callUs: "Call the office",
+    leadTitle: "Request a callback",
+    leadText: "A team member will call you back during office hours. The consultation is free.",
+    leadName: "Your name",
+    leadPhone: "Phone number",
+    leadDistrict: "District (e.g. Marzahn)",
+    leadConcern: "What is it about? (one sentence, no diagnoses please)",
+    leadConsent: "I agree that my details are stored and used for the callback.",
+    leadSubmit: "Request callback",
+    leadSending: "Sending …",
+    leadDone: "Thank you! Your request has arrived. We'll call you during office hours (Mon–Fri 8–16).",
+    leadOpen: "Request callback",
+    aiNote: "You are talking to an AI. Answers may contain mistakes. In an emergency: 112.",
+    privacy: "Chats are not stored. We only store callback requests you agree to.",
+    demo: (author: string, company: string) => `Concept demo by ${author}. Not an official service of ${company}.`,
+    unavailable: "The assistant isn't set up yet. Please call directly:",
+    close: "Close",
+  },
 } as const;
 
 export function detectLang(): Lang {
   if (typeof navigator === "undefined") return "de";
   const fromUrl = new URLSearchParams(location.search).get("lang");
-  if (fromUrl === "de" || fromUrl === "ru") return fromUrl;
+  if (fromUrl === "de" || fromUrl === "ru" || fromUrl === "en") return fromUrl;
   try {
     const saved = localStorage.getItem("va-lang");
-    if (saved === "de" || saved === "ru") return saved;
+    if (saved === "de" || saved === "ru" || saved === "en") return saved;
   } catch {}
   const langs = navigator.languages?.length ? navigator.languages : [navigator.language];
-  return langs.some((l) => /^(ru|uk|be|kk)/i.test(l)) ? "ru" : "de";
+  for (const l of langs) {
+    if (/^(ru|uk|be|kk)/i.test(l)) return "ru";
+    if (/^de/i.test(l)) return "de";
+    if (/^en/i.test(l)) return "en";
+  }
+  return "de";
 }
+
+export const BCP47: Record<Lang, string> = { de: "de-DE", ru: "ru-RU", en: "en-US" };

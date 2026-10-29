@@ -58,6 +58,7 @@ export default function CallOverlay({
 }) {
   const t = T[lang];
   const [phase, setPhase] = useState<Phase>("connecting");
+  const started = true;
   const [error, setError] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [left, setLeft] = useState<number | null>(null);
@@ -219,7 +220,9 @@ export default function CallOverlay({
   }
 
   useEffect(() => {
+    if (!started) return;
     let cancelled = false;
+    setPhase("connecting");
 
     (async () => {
       // 1) Mikrofon
@@ -339,7 +342,10 @@ export default function CallOverlay({
 
         // 6) Assistent soll zuerst begrüßen
         session.sendRealtimeInput({
-          text: lang === "ru" ? "(Звонящий подключился. Поздоровайся.)" : "(Der Anrufer ist verbunden. Bitte begrüße ihn.)",
+          text:
+            lang === "ru" ? "(Звонящий подключился. Поздоровайся.)"
+            : lang === "en" ? "(The caller is connected. Please greet them.)"
+            : "(Der Anrufer ist verbunden. Bitte begrüße ihn.)",
         });
 
         setPhase("listening");
@@ -366,7 +372,7 @@ export default function CallOverlay({
       hangup();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [started]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();

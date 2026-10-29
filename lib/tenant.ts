@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type Lang = "de" | "ru";
+export type Lang = "de" | "ru" | "en";
 
 export type Company = {
   id: string;

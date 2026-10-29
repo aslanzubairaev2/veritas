@@ -4,7 +4,8 @@
   "shortName": "VERITAS",
   "tagline": {
     "de": "Ambulante Pflege in Berlin und Zossen",
-    "ru": "Уход на дому в Берлине и Цоссене"
+    "ru": "Уход на дому в Берлине и Цоссене",
+    "en": "Home care in Berlin and Zossen"
   },
   "phone": "030 688 377 133",
   "phoneHref": "+4930688377133",
@@ -12,13 +13,30 @@
   "website": "https://veritas24.info",
   "hours": {
     "de": "Büro Mo–Fr 8–16 Uhr. Außerhalb davon 24-Stunden-Rufbereitschaft.",
-    "ru": "Офис пн–пт 8–16. В остальное время круглосуточная дежурная связь."
+    "ru": "Офис пн–пт 8–16. В остальное время круглосуточная дежурная связь.",
+    "en": "Office Mon–Fri 8–16. Outside these hours: 24-hour on-call service."
   },
   "locations": [
-    { "label": "Charlottenburg", "address": "Sophie-Charlotten-Straße 30, 14059 Berlin", "phone": "030 688 377 133" },
-    { "label": "Marzahn", "address": "Marzahner Promenade 12, 12679 Berlin", "phone": "030 99 27 31 59" },
-    { "label": "Friedenau / Steglitz", "address": "Fregestraße 51, 12161 Berlin", "phone": "030 688 377 150" },
-    { "label": "Zossen", "address": "An der Dorfstraße 1, 15806 Zossen", "phone": "03378 542 89 69" }
+    {
+      "label": "Charlottenburg",
+      "address": "Sophie-Charlotten-Straße 30, 14059 Berlin",
+      "phone": "030 688 377 133"
+    },
+    {
+      "label": "Marzahn",
+      "address": "Marzahner Promenade 12, 12679 Berlin",
+      "phone": "030 99 27 31 59"
+    },
+    {
+      "label": "Friedenau / Steglitz",
+      "address": "Fregestraße 51, 12161 Berlin",
+      "phone": "030 688 377 150"
+    },
+    {
+      "label": "Zossen",
+      "address": "An der Dorfstraße 1, 15806 Zossen",
+      "phone": "03378 542 89 69"
+    }
   ],
   "quickQuestions": {
     "de": [
@@ -34,6 +52,13 @@
       "Сколько платит касса в 2026 году?",
       "Есть ли у вас жилые группы для пожилых?",
       "Какой офис отвечает за Марцан?"
+    ],
+    "en": [
+      "How do I get a care level (Pflegegrad)?",
+      "My mother has dementia. How can you help?",
+      "What does the care insurance pay in 2026?",
+      "Do you have shared flats for seniors?",
+      "Which office covers Marzahn?"
     ]
   }
 }

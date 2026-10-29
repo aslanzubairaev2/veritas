@@ -8,9 +8,9 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return Response.json({ error: "Ungültige Anfrage" }, { status: 400 });
 
-  // Im Chat-Formular ist die Einwilligung Pflicht; im Gespräch gibt die Person die Daten selbst mündlich.
+  // Einwilligung ist immer Pflicht: im Chat per Häkchen, im Gespräch per ausdrücklichem „Ja“ (consent = true)
   const source = body.source === "call" ? "call" : "chat";
-  if (source === "chat" && body.consent !== true) {
+  if (body.consent !== true) {
     return Response.json({ error: "Bitte der Kontaktaufnahme zustimmen / Подтвердите согласие" }, { status: 400 });
   }
 

@@ -52,7 +52,9 @@ export async function POST(req: Request) {
                 style:
                   lang === "ru"
                     ? "тепло, спокойно, чуть медленнее обычного, как внимательный консультант службы ухода"
-                    : "warm, ruhig, etwas langsamer, wie eine aufmerksame Beraterin eines Pflegedienstes",
+                    : lang === "en"
+                      ? "warm, calm, a little slower than usual, like an attentive home-care advisor"
+                      : "warm, ruhig, etwas langsamer, wie eine aufmerksame Beraterin eines Pflegedienstes",
               },
             },
           ],

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { T, detectLang, type Lang } from "@/lib/i18n";
+import { BCP47, LANGS, T, detectLang, type Lang } from "@/lib/i18n";
 import type { Company } from "@/lib/tenant";
 import LeadForm from "./LeadForm";
 
@@ -88,7 +88,7 @@ export default function Assistant({
   async function speak(text: string) {
     if (!readAloud || !text) return;
     stopSpeaking();
-    const spokenLang: Lang = /[а-яё]/i.test(text) ? "ru" : "de";
+    const spokenLang: Lang = /[а-яё]/i.test(text) ? "ru" : /[äöüß]/i.test(text) ? "de" : lang;
     if (cfg?.serverSpeech) {
       try {
         const res = await fetch("/api/tts", {
@@ -109,7 +109,7 @@ export default function Assistant({
     }
     try {
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = spokenLang === "ru" ? "ru-RU" : "de-DE";
+      u.lang = BCP47[spokenLang];
       u.rate = 0.95;
       window.speechSynthesis.speak(u);
     } catch {}
@@ -194,7 +194,7 @@ export default function Assistant({
     if (SR) {
       try {
         const r = new SR();
-        r.lang = lang === "ru" ? "ru-RU" : "de-DE";
+        r.lang = BCP47[lang];
         r.interimResults = true;
         r.continuous = true;
         let finalText = "";
@@ -337,9 +337,9 @@ export default function Assistant({
         </div>
         <div className="top-actions">
           <div className="lang" role="group" aria-label="Sprache / Язык">
-            {(["de", "ru"] as Lang[]).map((l) => (
+            {LANGS.map((l) => (
               <button key={l} aria-pressed={lang === l} onClick={() => setLang(l)}>
-                {l === "de" ? "DE" : "RU"}
+                {l.toUpperCase()}
               </button>
             ))}
           </div>
