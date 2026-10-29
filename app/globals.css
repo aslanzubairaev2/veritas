@@ -220,6 +220,18 @@ a { color: var(--petrol); }
   border-radius: var(--radius-m) var(--radius-m) var(--radius-m) 6px;
 }
 .msg.error { border-color: var(--danger); }
+.msg.assistant { position: relative; }
+.speak {
+  display: inline-grid; place-items: center;
+  width: 36px; height: 36px;
+  margin: 8px 0 -4px -6px;
+  border: 0; border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+.speak:hover { background: var(--petrol-soft); color: var(--petrol); }
+.speak.is-loading { color: var(--petrol); animation: blink 1s infinite ease-in-out; }
+.speak.is-playing { background: var(--petrol-soft); color: var(--petrol); }
 
 .slow-note { margin: 4px 0 0; font-size: 15px; color: var(--muted); }
 .typing { display: inline-flex; gap: 5px; padding: 6px 2px; }

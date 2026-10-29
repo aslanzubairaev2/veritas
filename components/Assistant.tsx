@@ -9,7 +9,7 @@ import { addCaptureWorklet, rms, toBase64 } from "@/lib/pcm";
 
 const CallOverlay = dynamic(() => import("./CallOverlay"), { ssr: false });
 
-type Msg = { id: string; role: "user" | "assistant"; content: string; lead?: boolean; error?: boolean };
+type Msg = { id: string; role: "user" | "assistant"; content: string; lead?: boolean; error?: boolean; final?: boolean };
 type Config = { chat: boolean; voiceCall: boolean; serverSpeech: boolean };
 type MicState = "idle" | "recording" | "transcribing" | "live";
 
@@ -43,7 +43,8 @@ export default function Assistant({
   const [contactOpen, setContactOpen] = useState(false);
   const [mic, setMic] = useState<MicState>("idle");
   const [hint, setHint] = useState("");
-  const [readAloud, setReadAloud] = useState(false);
+  const [speaking, setSpeaking] = useState<{ id: string; phase: "loading" | "playing" } | null>(null);
+  const audioCache = useRef<Map<string, string>>(new Map());
   const [leadDone, setLeadDone] = useState(false);
   const [openLead, setOpenLead] = useState<string | null>(null);
   const [slow, setSlow] = useState(false);
@@ -57,7 +58,6 @@ export default function Assistant({
 
   useEffect(() => {
     setLang(detectLang());
-    try { setReadAloud(localStorage.getItem("va-read") === "1"); } catch {}
     fetch("/api/config")
       .then((r) => (r.ok ? r.json() : null))
       .then((c) => setCfg(c ?? { chat: false, voiceCall: false, serverSpeech: false }))
@@ -74,22 +74,30 @@ export default function Assistant({
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [msgs]);
 
-  function toggleRead() {
-    const v = !readAloud;
-    setReadAloud(v);
-    try { localStorage.setItem("va-read", v ? "1" : "0"); } catch {}
-    if (!v) stopSpeaking();
-  }
-
   function stopSpeaking() {
     audioRef.current?.pause();
     try { window.speechSynthesis?.cancel(); } catch {}
+    setSpeaking(null);
   }
 
-  async function speak(text: string) {
-    if (!readAloud || !text) return;
+  /** Antwort vorlesen – nur auf Knopfdruck am jeweiligen Text. Zweiter Druck stoppt. */
+  async function speak(id: string, text: string) {
+    if (speaking?.id === id) return stopSpeaking();
     stopSpeaking();
+    if (!text) return;
     const spokenLang: Lang = /[а-яё]/i.test(text) ? "ru" : /[äöüß]/i.test(text) ? "de" : lang;
+    const play = async (url: string) => {
+      const a = audioRef.current ?? new Audio();
+      audioRef.current = a;
+      a.src = url;
+      a.onended = () => setSpeaking((s) => (s?.id === id ? null : s));
+      a.onpause = () => setSpeaking((s) => (s?.id === id ? null : s));
+      setSpeaking({ id, phase: "playing" });
+      await a.play();
+    };
+    const cached = audioCache.current.get(id);
+    if (cached) return play(cached).catch(() => setSpeaking(null));
+    setSpeaking({ id, phase: "loading" });
     if (cfg?.serverSpeech) {
       try {
         const res = await fetch("/api/tts", {
@@ -99,21 +107,21 @@ export default function Assistant({
         });
         if (res.ok) {
           const url = URL.createObjectURL(await res.blob());
-          const a = audioRef.current ?? new Audio();
-          audioRef.current = a;
-          a.src = url;
-          a.onended = () => URL.revokeObjectURL(url);
-          await a.play();
-          return;
+          audioCache.current.set(id, url);
+          return await play(url);
         }
       } catch {}
     }
+    // Rückfall: Stimme des Geräts
     try {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = BCP47[spokenLang];
-      u.rate = 0.95;
+      u.onend = () => setSpeaking(null);
+      setSpeaking({ id, phase: "playing" });
       window.speechSynthesis.speak(u);
-    } catch {}
+    } catch {
+      setSpeaking(null);
+    }
   }
 
   async function send(textRaw: string) {
@@ -157,8 +165,7 @@ export default function Assistant({
         setMsgs((prev) => prev.map((m) => (m.id === bot.id ? { ...m, content: shown } : m)));
       }
       const wantsLead = full.includes(MARKER) && !leadDone;
-      setMsgs((prev) => prev.map((m) => (m.id === bot.id ? { ...m, content: full, lead: wantsLead } : m)));
-      speak(visible(full));
+      setMsgs((prev) => prev.map((m) => (m.id === bot.id ? { ...m, content: full, lead: wantsLead, final: true } : m)));
     } catch (e) {
       const msg = e instanceof Error && e.message !== "error" ? e.message : t.errorGeneric;
       setMsgs((prev) =>
@@ -483,6 +490,20 @@ export default function Assistant({
             ) : (
               <p>{m.role === "assistant" ? visible(m.content) : m.content}</p>
             )}
+            {m.role === "assistant" && m.final && !m.error && (
+              <button
+                className={`speak${speaking?.id === m.id ? ` is-${speaking.phase}` : ""}`}
+                onClick={() => speak(m.id, visible(m.content))}
+                aria-label={speaking?.id === m.id ? t.stopReading : t.readAloud}
+                title={speaking?.id === m.id ? t.stopReading : t.readAloud}
+              >
+                {speaking?.id === m.id && speaking.phase === "playing" ? (
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z"/></svg>
+                )}
+              </button>
+            )}
             {m.lead && !leadDone &&
               (openLead === m.id ? (
                 <LeadForm lang={lang} onDone={() => setLeadDone(true)} />
@@ -541,10 +562,6 @@ export default function Assistant({
           </button>
         </form>
         <div className="foot">
-          <label className="switch">
-            <input type="checkbox" checked={readAloud} onChange={toggleRead} />
-            <span>{t.readAloud}</span>
-          </label>
           <span className="ai-note">{t.aiNote}</span>
         </div>
       </footer>
