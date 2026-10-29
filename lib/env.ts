@@ -7,8 +7,8 @@ export const env = {
   geminiKey: () => v("GEMINI_API_KEY"),
   /** Schlüssel für Vertex AI (leer = derselbe wie GEMINI_API_KEY) */
   vertexKey: () => v("VERTEX_API_KEY") || v("GEMINI_API_KEY"),
-  /** auto = erst Vertex AI, dann AI Studio | vertex | studio */
-  textBackend: () => v("GEMINI_TEXT_BACKEND", "auto").toLowerCase(),
+  /** studio (Standard) | auto = erst Vertex AI, dann AI Studio | vertex */
+  textBackend: () => v("GEMINI_TEXT_BACKEND", "studio").toLowerCase(),
 
   chatModel: () => v("GEMINI_CHAT_MODEL", "gemini-3.8-flash"),
   /** Hauptmodell + Ersatzmodelle (falls das Hauptmodell überlastet ist), ohne Dopplungen */
