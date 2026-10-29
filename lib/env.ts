@@ -8,7 +8,7 @@ export const env = {
 
   chatModel: () => v("GEMINI_CHAT_MODEL", "gemini-3.8-flash"),
   /** Optional: minimal | low | medium | high */
-  thinkingLevel: () => v("GEMINI_THINKING_LEVEL"),
+  thinkingLevel: () => v("GEMINI_THINKING_LEVEL", "low"),
 
   liveModel: () => v("LIVE_MODEL") || v("REALTIME_MODEL", "gemini-3.8-live"),
   liveVoice: () => v("LIVE_VOICE") || v("REALTIME_VOICE", "Aoede"),

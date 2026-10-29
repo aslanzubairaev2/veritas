@@ -36,7 +36,8 @@ export async function POST(req: Request) {
             outputAudioTranscription: {},
           },
         },
-        lockAdditionalFields: [],
+        // Kein lockAdditionalFields: dann sind alle Felder aus liveConnectConstraints festgeschrieben.
+        // (Ein leeres Array erzeugt eine field_mask, die die API mit 400 ablehnt.)
       },
     };
     let token;

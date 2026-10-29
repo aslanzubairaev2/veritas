@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const stream = await streamChat(chatInstructions(), history, req.signal);
+    const stream = await streamChat(chatInstructions(), history);
     return new Response(stream, {
       headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" },
     });
