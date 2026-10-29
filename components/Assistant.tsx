@@ -5,12 +5,13 @@ import dynamic from "next/dynamic";
 import { BCP47, LANGS, T, detectLang, type Lang } from "@/lib/i18n";
 import type { Company } from "@/lib/tenant";
 import LeadForm from "./LeadForm";
+import { addCaptureWorklet, rms, toBase64 } from "@/lib/pcm";
 
 const CallOverlay = dynamic(() => import("./CallOverlay"), { ssr: false });
 
 type Msg = { id: string; role: "user" | "assistant"; content: string; lead?: boolean; error?: boolean };
 type Config = { chat: boolean; voiceCall: boolean; serverSpeech: boolean };
-type MicState = "idle" | "recording" | "transcribing" | "browser";
+type MicState = "idle" | "recording" | "transcribing" | "live";
 
 const MARKER = "[[RUECKRUF]]";
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -51,7 +52,6 @@ export default function Assistant({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const speechRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const t = T[lang];
 
@@ -171,151 +171,243 @@ export default function Assistant({
     }
   }
 
-  // ---------- Mikrofon ----------
+  // ---------- Mikrofon: Gemini-Echtzeit-Spracherkennung ----------
   // Nach so viel Stille gilt die Frage als fertig und wird automatisch gesendet
   const SILENCE_MS = 1000;
+  const dictRef = useRef<{ finish: () => void } | null>(null);
 
   async function micPress() {
     // Zweiter Druck = sofort fertig
-    if (mic === "recording") {
-      recRef.current?.stop();
+    if (mic === "live") {
+      dictRef.current?.finish();
       return;
     }
-    if (mic === "browser") {
-      speechRef.current?.finish?.();
+    if (mic === "recording") {
+      recRef.current?.stop();
       return;
     }
     if (mic === "transcribing") return;
     stopSpeaking();
     setHint("");
+    const ok = await liveDictation();
+    if (!ok) await recordAndTranscribe();
+  }
 
-    // 1) Schnellster Weg: Spracherkennung des Browsers (Chrome, Edge, Android, Safari).
-    //    Text erscheint schon beim Sprechen, nach 1 s Stille wird gesendet.
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SR) {
+  /** gemini-3.5-transcribe-live: Text erscheint beim Sprechen, Sprache wird automatisch erkannt. */
+  async function liveDictation(): Promise<boolean> {
+    if (!cfg?.serverSpeech || !navigator.mediaDevices?.getUserMedia || typeof AudioWorkletNode === "undefined") return false;
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      });
+    } catch {
+      setHint(t.callMicDenied);
+      return true; // nicht auf andere Wege ausweichen – das Mikrofon ist gesperrt
+    }
+
+    const ctx = new AudioContext();
+    let session: any = null;
+    let finals = "";
+    let interim = "";
+    let done = false;
+    let ending = false;
+    let heard = false;
+    let quietSince = Date.now();
+    const startedAt = Date.now();
+    const pending: string[] = [];
+    let endTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const show = () => setInput((finals + " " + interim).replace(/\s+/g, " ").trim());
+
+    const cleanup = () => {
+      clearTimeout(endTimer);
+      stream.getTracks().forEach((tr) => tr.stop());
+      ctx.close().catch(() => {});
+      try { session?.close(); } catch {}
+      dictRef.current = null;
+    };
+
+    const finish = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      setMic("idle");
+      const text = (finals + " " + interim).replace(/\s+/g, " ").trim();
+      if (text) send(text);
+      else setInput("");
+    };
+
+    // Sprechpause erkannt → Server bitten, sofort abzuschließen; kurz auf den endgültigen Text warten
+    const endTurn = () => {
+      if (ending || done) return;
+      ending = true;
+      try { session?.sendRealtimeInput({ audioStreamEnd: true }); } catch {}
+      endTimer = setTimeout(finish, 1200);
+    };
+    dictRef.current = { finish: () => (session ? endTurn() : finish()) };
+
+    try {
+      await addCaptureWorklet(ctx);
+      const node = new AudioWorkletNode(ctx, "capture-16k", { processorOptions: { chunk: 1600 } }); // 100 ms
+      node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
+        if (done || ending) return;
+        // Stille-Erkennung
+        if (rms(e.data) > 0.015) {
+          heard = true;
+          quietSince = Date.now();
+        } else if (heard && Date.now() - quietSince > SILENCE_MS) {
+          endTurn();
+        } else if (!heard && Date.now() - startedAt > 8000) {
+          finish(); // gar nichts gesagt
+          return;
+        }
+        if (Date.now() - startedAt > 60_000) endTurn();
+        const b64 = toBase64(e.data);
+        if (session) {
+          try { session.sendRealtimeInput({ audio: { data: b64, mimeType: "audio/pcm;rate=16000" } }); } catch {}
+        } else {
+          pending.push(b64); // Anfang nicht verlieren, solange die Verbindung aufgebaut wird
+        }
+      };
+      ctx.createMediaStreamSource(stream).connect(node);
+      setMic("live");
+
+      const res = await fetch("/api/stt", { method: "POST" });
+      const tok = await res.json().catch(() => ({}));
+      if (!res.ok || !tok.token) throw new Error(tok.error || "token");
+
+      const { GoogleGenAI, Modality } = await import("@google/genai");
+      const connect = (apiVersion: "v1beta" | "v1alpha") =>
+        new Promise<any>((resolve, reject) => {
+          let ready = false;
+          let gotMsg = false;
+          let s: any = null;
+          const tryResolve = () => {
+            if (!ready && gotMsg && s) {
+              ready = true;
+              resolve(s);
+            }
+          };
+          new GoogleGenAI({ apiKey: tok.token, httpOptions: { apiVersion } }).live
+            .connect({
+              model: tok.model,
+              config: { responseModalities: [Modality.TEXT] },
+              callbacks: {
+                onmessage: (m: any) => {
+                  gotMsg = true;
+                  tryResolve();
+                  const sc = m?.serverContent;
+                  if (!sc) return;
+                  if (sc.interimInputTranscription?.text != null) {
+                    interim = sc.interimInputTranscription.text;
+                    show();
+                  }
+                  if (sc.inputTranscription?.text) {
+                    finals += " " + sc.inputTranscription.text;
+                    interim = "";
+                    show();
+                    if (ending) finish(); // endgültiger Text nach der Pause ist da
+                  }
+                },
+                onerror: (e: unknown) => console.warn("stt error", apiVersion, e),
+                onclose: () => {
+                  if (!ready) reject(new Error("closed"));
+                  else if (!done) finish();
+                },
+              },
+            })
+            .then((x) => {
+              s = x;
+              tryResolve();
+              setTimeout(() => !ready && reject(new Error("setup timeout")), 8000);
+            }, reject);
+        });
+
       try {
-        const r = new SR();
-        r.lang = BCP47[lang];
-        r.interimResults = true;
-        r.continuous = true;
-        let finalText = "";
-        let interim = "";
-        let done = false;
-        let silence: ReturnType<typeof setTimeout> | undefined;
-        const finish = () => {
-          if (done) return;
-          done = true;
-          clearTimeout(silence);
-          try { r.stop(); } catch {}
+        session = await connect("v1beta");
+      } catch {
+        session = await connect("v1alpha");
+      }
+      if (done) {
+        try { session.close(); } catch {}
+        return true;
+      }
+      // Was vor dem Verbindungsaufbau gesprochen wurde, jetzt nachsenden
+      for (const b64 of pending.splice(0)) session.sendRealtimeInput({ audio: { data: b64, mimeType: "audio/pcm;rate=16000" } });
+      if (ending) session.sendRealtimeInput({ audioStreamEnd: true });
+      return true;
+    } catch (e) {
+      console.warn("live dictation failed, using server fallback", e);
+      done = true;
+      cleanup();
+      setMic("idle");
+      return false;
+    }
+  }
+
+  /** Rückfall: Aufnahme → Server (gemini-3.5-transcribe), stoppt selbst nach 1 s Stille. */
+  async function recordAndTranscribe() {
+    if (!cfg?.serverSpeech || typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setHint(t.micKeyboard);
+      inputRef.current?.focus();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((m) => MediaRecorder.isTypeSupported?.(m));
+      const rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+      chunksRef.current = [];
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const buf = new Uint8Array(analyser.fftSize);
+      let heard = false;
+      let quietSince = Date.now();
+      const vad = setInterval(() => {
+        analyser.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = (buf[i] - 128) / 128;
+          sum += v * v;
+        }
+        if (Math.sqrt(sum / buf.length) > 0.02) {
+          heard = true;
+          quietSince = Date.now();
+        } else if (heard && Date.now() - quietSince > SILENCE_MS && rec.state === "recording") rec.stop();
+        else if (!heard && Date.now() - quietSince > 8000 && rec.state === "recording") rec.stop();
+      }, 100);
+      rec.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
+      rec.onstop = async () => {
+        clearInterval(vad);
+        ctx.close().catch(() => {});
+        stream.getTracks().forEach((tr) => tr.stop());
+        if (!heard) return setMic("idle");
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        setMic("transcribing");
+        try {
+          const fd = new FormData();
+          fd.append("audio", blob);
+          fd.append("lang", lang);
+          const res = await fetch("/api/transcribe", { method: "POST", body: fd });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "");
           setMic("idle");
-          const text = (finalText + " " + interim).replace(/\s+/g, " ").trim();
-          if (text) send(text);
-          else setInput("");
-        };
-        r.finish = finish;
-        r.onresult = (e: any) => {
-          interim = "";
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            const s = e.results[i][0].transcript;
-            if (e.results[i].isFinal) finalText += " " + s;
-            else interim += s;
-          }
-          setInput((finalText + " " + interim).replace(/\s+/g, " ").trim());
-          clearTimeout(silence);
-          silence = setTimeout(finish, SILENCE_MS);
-        };
-        r.onend = finish;
-        r.onerror = (e: any) => {
-          if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
-            done = true;
-            setMic("idle");
-            setHint(t.callMicDenied);
-            return;
-          }
-          finish();
-        };
-        speechRef.current = r;
-        r.start();
-        setMic("browser");
-        return;
-      } catch {
-        /* weiter zu Variante 2 */
-      }
+          if (data.text) send(data.text);
+        } catch {
+          setMic("idle");
+          setHint(t.errorGeneric + " " + company.phone);
+        }
+      };
+      recRef.current = rec;
+      rec.start();
+      setMic("recording");
+      setTimeout(() => rec.state === "recording" && rec.stop(), 60_000);
+    } catch {
+      setHint(t.callMicDenied);
     }
-
-    // 2) Browser ohne eigene Spracherkennung (z. B. Firefox): Aufnahme → Server (Gemini).
-    //    Aufnahme stoppt selbst nach 1 s Stille.
-    if (cfg?.serverSpeech && typeof MediaRecorder !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-        const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((m) => MediaRecorder.isTypeSupported?.(m));
-        const rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
-        chunksRef.current = [];
-
-        // Stille-Erkennung über die Lautstärke
-        const ctx = new AudioContext();
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 1024;
-        ctx.createMediaStreamSource(stream).connect(analyser);
-        const buf = new Uint8Array(analyser.fftSize);
-        let heard = false;
-        let quietSince = Date.now();
-        const vad = setInterval(() => {
-          analyser.getByteTimeDomainData(buf);
-          let sum = 0;
-          for (let i = 0; i < buf.length; i++) {
-            const v = (buf[i] - 128) / 128;
-            sum += v * v;
-          }
-          const loud = Math.sqrt(sum / buf.length) > 0.02;
-          if (loud) {
-            heard = true;
-            quietSince = Date.now();
-          } else if (heard && Date.now() - quietSince > SILENCE_MS && rec.state === "recording") {
-            rec.stop();
-          } else if (!heard && Date.now() - quietSince > 8000 && rec.state === "recording") {
-            rec.stop(); // gar nichts gesagt
-          }
-        }, 100);
-
-        rec.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
-        rec.onstop = async () => {
-          clearInterval(vad);
-          ctx.close().catch(() => {});
-          stream.getTracks().forEach((tr) => tr.stop());
-          if (!heard) {
-            setMic("idle");
-            return;
-          }
-          const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
-          setMic("transcribing");
-          try {
-            const fd = new FormData();
-            fd.append("audio", blob);
-            fd.append("lang", lang);
-            const res = await fetch("/api/transcribe", { method: "POST", body: fd });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || "");
-            setMic("idle");
-            if (data.text) send(data.text);
-          } catch {
-            setMic("idle");
-            setHint(t.errorGeneric + " " + company.phone);
-          }
-        };
-        recRef.current = rec;
-        rec.start();
-        setMic("recording");
-        setTimeout(() => rec.state === "recording" && rec.stop(), 60_000);
-        return;
-      } catch {
-        /* weiter zu Variante 3 */
-      }
-    }
-
-    // 3) Rückfall: Mikrofon der Handy-Tastatur
-    setHint(t.micKeyboard);
-    inputRef.current?.focus();
   }
 
   const started = msgs.length > 0;
@@ -417,11 +509,11 @@ export default function Assistant({
             type="button"
             className={`mic mic-${mic}`}
             onClick={micPress}
-            aria-label={mic === "recording" || mic === "browser" ? t.micStop : t.micHold}
-            title={mic === "recording" || mic === "browser" ? t.micStop : t.micHold}
+            aria-label={mic === "recording" || mic === "live" ? t.micStop : t.micHold}
+            title={mic === "recording" || mic === "live" ? t.micStop : t.micHold}
             disabled={!chatReady}
           >
-            {mic === "recording" || mic === "browser" ? (
+            {mic === "recording" || mic === "live" ? (
               <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
             ) : (
               <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12z"/></svg>

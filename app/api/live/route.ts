@@ -3,6 +3,7 @@ import { env } from "@/lib/env";
 import { errText, gemini } from "@/lib/gemini";
 import { callbackTool, voiceInstructions } from "@/lib/prompt";
 import { clientIp, rateLimit, tooMany } from "@/lib/ratelimit";
+import { VOCAB } from "@/lib/vocab";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
             inputAudioTranscription: {
               languageCodes:
                 language === "ru" ? ["ru-RU", "de-DE", "en-US"] : language === "en" ? ["en-US", "de-DE", "ru-RU"] : ["de-DE", "ru-RU", "en-US"],
+              customVocabulary: VOCAB,
             },
             outputAudioTranscription: {},
           },

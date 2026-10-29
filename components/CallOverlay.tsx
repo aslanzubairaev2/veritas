@@ -2,39 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { T, type Lang } from "@/lib/i18n";
+import { addCaptureWorklet, toBase64 } from "@/lib/pcm";
 
 type Line = { who: "user" | "bot"; text: string; id: number };
 type Phase = "connecting" | "listening" | "speaking" | "ended" | "error";
-
-// Kleiner Audio-Prozessor im Browser: Mikrofon → 16 kHz, 16-bit PCM (Format für Gemini Live)
-const WORKLET = `
-class Capture extends AudioWorkletProcessor {
-  constructor() { super(); this.ratio = sampleRate / 16000; this.pos = 0; this.buf = []; }
-  process(inputs) {
-    const ch = inputs[0] && inputs[0][0];
-    if (ch) {
-      for (; this.pos < ch.length; this.pos += this.ratio) {
-        const s = Math.max(-1, Math.min(1, ch[Math.floor(this.pos)]));
-        this.buf.push(s < 0 ? s * 0x8000 : s * 0x7fff);
-      }
-      this.pos -= ch.length;
-      if (this.buf.length >= 640) { // 40 ms
-        this.port.postMessage(Int16Array.from(this.buf).buffer, []);
-        this.buf = [];
-      }
-    }
-    return true;
-  }
-}
-registerProcessor("capture-16k", Capture);
-`;
-
-function toBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-}
 
 function fromBase64(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -250,9 +221,7 @@ export default function CallOverlay({
 
         const inCtx = new AudioContext();
         inCtxRef.current = inCtx;
-        const url = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
-        await inCtx.audioWorklet.addModule(url);
-        URL.revokeObjectURL(url);
+        await addCaptureWorklet(inCtx);
 
         // 3) Einmal-Schlüssel vom eigenen Server
         const tokenRes = await fetch("/api/live", {

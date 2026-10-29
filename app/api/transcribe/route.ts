@@ -1,15 +1,12 @@
 import { env } from "@/lib/env";
 import { errText, viaBackends } from "@/lib/gemini";
 import { clientIp, rateLimit, tooMany } from "@/lib/ratelimit";
+import { VOCAB } from "@/lib/vocab";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const VOCAB = [
-  "Pflegedienst", "Pflegegrad", "Pflegekasse", "Verhinderungspflege", "Kurzzeitpflege", "Entlastungsbetrag",
-  "Behandlungspflege", "Grundpflege", "Demenz", "Hausnotruf", "Medizinischer Dienst", "VERITAS",
-  "Marzahn", "Charlottenburg", "Hellersdorf", "Friedenau", "Steglitz", "Zossen", "GOODLIFE", "Sonnenhaus", "Schöne Linde",
-];
+
 
 function textOf(res: { text?: string; candidates?: { content?: { parts?: { text?: string }[] } }[] }) {
   const direct = res.text?.trim();

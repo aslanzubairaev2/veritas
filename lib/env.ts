@@ -26,6 +26,7 @@ export const env = {
     return Number.isFinite(n) && n >= 30 ? Math.min(n, 1800) : 300;
   },
   transcribeModel: () => v("TRANSCRIBE_MODEL", "gemini-3.5-transcribe"),
+  sttLiveModel: () => v("STT_LIVE_MODEL", "gemini-3.5-transcribe-live"),
   ttsModel: () => v("TTS_MODEL", "gemini-3.8-flash-lite-tts"),
   ttsVoice: () => v("TTS_VOICE", "Zephyr"),
 

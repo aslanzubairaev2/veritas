@@ -311,7 +311,7 @@ a { color: var(--petrol); }
   display: grid; place-items: center;
 }
 .mic { background: var(--marigold); color: var(--marigold-ink); }
-.mic-recording, .mic-browser { background: var(--danger); color: #fff; animation: pulse 1.4s infinite; }
+.mic-recording, .mic-live { background: var(--danger); color: #fff; animation: pulse 1.4s infinite; }
 .mic-transcribing { opacity: 0.6; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 45%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
 .send { background: var(--petrol); color: #fff; }
