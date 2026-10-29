@@ -4,13 +4,16 @@ import { errText, gemini } from "./gemini";
 export type ChatMsg = { role: "user" | "assistant"; content: string };
 
 /** Wie lange ein Modell Zeit hat, mit der Antwort zu beginnen, bevor das nächste versucht wird. */
-const FIRST_CHUNK_TIMEOUT_MS = 15_000;
+const PRIMARY_TIMEOUT_MS = 12_000;
+const FALLBACK_TIMEOUT_MS = 20_000;
+/** Gesamtbudget (Vercel bricht nach 60 s ab) */
+const TOTAL_BUDGET_MS = 52_000;
 
 type Opened = { model: string; it: AsyncIterator<{ text?: string }>; firstText: string; ctl: AbortController };
 
-async function openModel(model: string, primary: boolean, system: string, history: ChatMsg[]): Promise<Opened> {
+async function openModel(model: string, withThinking: boolean, timeoutMs: number, system: string, history: ChatMsg[]): Promise<Opened> {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), FIRST_CHUNK_TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
   const level = env.thinkingLevel();
   try {
     const stream = await gemini().models.generateContentStream({
@@ -19,8 +22,8 @@ async function openModel(model: string, primary: boolean, system: string, histor
       config: {
         systemInstruction: system,
         abortSignal: ctl.signal,
-        // Thinking-Stufe nur beim Hauptmodell – Ersatzmodelle unterstützen sie evtl. nicht
-        ...(primary && level ? { thinkingConfig: { thinkingLevel: level as never } } : {}),
+        // Kurzes Nachdenken = schnelle Antwort. Ohne Angabe denken manche Modelle sehr lange.
+        ...(withThinking && level ? { thinkingConfig: { thinkingLevel: level as never } } : {}),
       },
     });
     const it = stream[Symbol.asyncIterator]();
@@ -48,13 +51,26 @@ export async function streamChat(system: string, history: ChatMsg[]): Promise<Re
   let lastErr: unknown = null;
 
   for (let i = 0; i < models.length && !opened; i++) {
-    try {
-      opened = await openModel(models[i], i === 0, system, history);
-      console.log(`chat: ${models[i]} answered after ${Date.now() - t0} ms`);
-    } catch (e) {
-      lastErr = e;
-      const why = (e as Error)?.name === "AbortError" ? "timeout" : errText(e).slice(0, 200);
-      console.warn(`chat: ${models[i]} failed after ${Date.now() - t0} ms (${why})`);
+    const left = TOTAL_BUDGET_MS - (Date.now() - t0);
+    if (left < 3_000) break;
+    const timeout = Math.min(i === 0 ? PRIMARY_TIMEOUT_MS : FALLBACK_TIMEOUT_MS, left);
+    let withThinking = true;
+    for (let attempt = 0; attempt < 2 && !opened; attempt++) {
+      try {
+        opened = await openModel(models[i], withThinking, timeout, system, history);
+        console.log(`chat: ${models[i]} answered after ${Date.now() - t0} ms`);
+      } catch (e) {
+        lastErr = e;
+        const text = errText(e);
+        const why = (e as Error)?.name === "AbortError" || /abort/i.test(text) ? "timeout" : text.slice(0, 200);
+        console.warn(`chat: ${models[i]} failed after ${Date.now() - t0} ms (${why})`);
+        // Modell kennt die Thinking-Einstellung nicht → einmal ohne versuchen
+        if (withThinking && /thinking/i.test(text) && /400|INVALID_ARGUMENT/i.test(text)) {
+          withThinking = false;
+          continue;
+        }
+        break;
+      }
     }
   }
   if (!opened) throw lastErr ?? new Error("no model answered");

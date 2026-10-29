@@ -9,7 +9,7 @@ export const env = {
   chatModel: () => v("GEMINI_CHAT_MODEL", "gemini-3.8-flash"),
   /** Hauptmodell + Ersatzmodelle (falls das Hauptmodell überlastet ist), ohne Dopplungen */
   chatModels: () =>
-    [v("GEMINI_CHAT_MODEL", "gemini-3.8-flash"), ...v("GEMINI_FALLBACK_MODELS", "gemini-3.6-flash,gemini-3.5-flash-lite").split(",")]
+    [v("GEMINI_CHAT_MODEL", "gemini-3.8-flash"), ...v("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash-lite,gemini-3.6-flash").split(",")]
       .map((m) => m.trim())
       .filter((m, i, a) => m && a.indexOf(m) === i),
   /** Optional: minimal | low | medium | high */
