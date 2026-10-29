@@ -53,28 +53,30 @@ export async function POST(req: Request) {
     console.warn("transcribe model failed, using fallback:", errText(e));
   }
 
-  // 2) Rückfall: normales Gemini-Modell mit Anweisung (falls das Spezialmodell leer bleibt)
-  try {
-    const res = await gemini().models.generateContent({
-      model: env.chatModel(),
-      contents: [
-        {
-          role: "user",
-          parts: [
-            audioPart,
-            {
-              text:
-                "Schreibe wörtlich auf, was in dieser Aufnahme gesagt wird, in der gesprochenen Sprache (meist Russisch oder Deutsch). " +
-                `Fachbegriffe richtig schreiben: ${VOCAB.join(", ")}. Gib NUR den Text zurück, ohne Kommentar. Wenn nichts gesagt wird, gib nichts zurück.`,
-            },
-          ],
-        },
-      ],
-      config: { temperature: 0 },
-    });
-    return Response.json({ text: textOf(res) });
-  } catch (e) {
-    console.error("transcribe failed:", errText(e));
-    return Response.json({ error: "Spracherkennung fehlgeschlagen." }, { status: 502 });
+  // 2) Rückfall: normale Gemini-Modelle mit Anweisung (falls das Spezialmodell leer bleibt oder überlastet ist)
+  for (const model of env.chatModels()) {
+    try {
+      const res = await gemini().models.generateContent({
+        model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              audioPart,
+              {
+                text:
+                  "Schreibe wörtlich auf, was in dieser Aufnahme gesagt wird, in der gesprochenen Sprache (meist Russisch oder Deutsch). " +
+                  `Fachbegriffe richtig schreiben: ${VOCAB.join(", ")}. Gib NUR den Text zurück, ohne Kommentar. Wenn nichts gesagt wird, gib nichts zurück.`,
+              },
+            ],
+          },
+        ],
+        config: { temperature: 0 },
+      });
+      return Response.json({ text: textOf(res) });
+    } catch (e) {
+      console.warn(`transcribe fallback ${model} failed:`, errText(e).slice(0, 200));
+    }
   }
+  return Response.json({ error: "Spracherkennung fehlgeschlagen." }, { status: 502 });
 }
