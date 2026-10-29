@@ -44,6 +44,7 @@ export default function Assistant({
   const [readAloud, setReadAloud] = useState(false);
   const [leadDone, setLeadDone] = useState(false);
   const [openLead, setOpenLead] = useState<string | null>(null);
+  const [slow, setSlow] = useState(false);
 
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -125,19 +126,25 @@ export default function Assistant({
     const history = [...msgs, user];
     setMsgs([...history, bot]);
     setBusy(true);
+    setSlow(false);
+    // Wenn der KI-Dienst überlastet ist, dauert es länger – dann einen Hinweis zeigen
+    const slowTimer = setTimeout(() => setSlow(true), 8000);
 
     let full = "";
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: history.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.content })),
-        }),
+      const body = JSON.stringify({
+        messages: history.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.content })),
       });
-      if (!res.ok || !res.body) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "error");
+      let res: Response | null = null;
+      // Bei Überlastung (5xx) einmal automatisch neu versuchen
+      for (let attempt = 0; attempt < 2; attempt++) {
+        res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+        if (res.ok || res.status < 500 || attempt === 1) break;
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (!res || !res.ok || !res.body) {
+        const data = await res?.json().catch(() => ({}));
+        throw new Error(res && res.status >= 500 ? "error" : data?.error || "error");
       }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
@@ -157,6 +164,8 @@ export default function Assistant({
         prev.map((m) => (m.id === bot.id ? { ...m, content: `${msg} ${company.phone}`, error: true } : m)),
       );
     } finally {
+      clearTimeout(slowTimer);
+      setSlow(false);
       setBusy(false);
     }
   }
@@ -321,7 +330,10 @@ export default function Assistant({
         {msgs.map((m) => (
           <div key={m.id} className={`msg ${m.role}${m.error ? " error" : ""}`}>
             {m.role === "assistant" && !m.content ? (
-              <span className="typing" aria-label={t.thinking}><i /><i /><i /></span>
+              <>
+                <span className="typing" aria-label={t.thinking}><i /><i /><i /></span>
+                {slow && <p className="slow-note">{t.slow}</p>}
+              </>
             ) : (
               <p>{m.role === "assistant" ? visible(m.content) : m.content}</p>
             )}

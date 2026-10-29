@@ -221,6 +221,7 @@ a { color: var(--petrol); }
 }
 .msg.error { border-color: var(--danger); }
 
+.slow-note { margin: 4px 0 0; font-size: 15px; color: var(--muted); }
 .typing { display: inline-flex; gap: 5px; padding: 6px 2px; }
 .typing i {
   width: 8px; height: 8px; border-radius: 50%;
