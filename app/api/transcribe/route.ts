@@ -1,5 +1,5 @@
 import { env } from "@/lib/env";
-import { errText, gemini } from "@/lib/gemini";
+import { errText, viaBackends } from "@/lib/gemini";
 import { clientIp, rateLimit, tooMany } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
   // 1) Spezialmodell für Spracherkennung
   try {
-    const res = await gemini().models.generateContent({
+    const res = await viaBackends("transcribe", (ai) => ai.models.generateContent({
       model: env.transcribeModel(),
       contents: [{ role: "user", parts: [audioPart] }],
       config: {
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
           customVocabulary: VOCAB,
         },
       },
-    });
+    }));
     const text = textOf(res);
     if (text) return Response.json({ text });
     console.warn("transcribe model returned empty text, using fallback");
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   // 2) Rückfall: normale Gemini-Modelle mit Anweisung (falls das Spezialmodell leer bleibt oder überlastet ist)
   for (const model of env.chatModels()) {
     try {
-      const res = await gemini().models.generateContent({
+      const res = await viaBackends("transcribe-fallback", (ai) => ai.models.generateContent({
         model,
         contents: [
           {
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
           },
         ],
         config: { temperature: 0 },
-      });
+      }));
       return Response.json({ text: textOf(res) });
     } catch (e) {
       console.warn(`transcribe fallback ${model} failed:`, errText(e).slice(0, 200));

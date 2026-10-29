@@ -5,6 +5,10 @@ const v = (name: string, fallback = ""): string => (process.env[name] ?? "").tri
 
 export const env = {
   geminiKey: () => v("GEMINI_API_KEY"),
+  /** Schlüssel für Vertex AI (leer = derselbe wie GEMINI_API_KEY) */
+  vertexKey: () => v("VERTEX_API_KEY") || v("GEMINI_API_KEY"),
+  /** auto = erst Vertex AI, dann AI Studio | vertex | studio */
+  textBackend: () => v("GEMINI_TEXT_BACKEND", "auto").toLowerCase(),
 
   chatModel: () => v("GEMINI_CHAT_MODEL", "gemini-3.8-flash"),
   /** Hauptmodell + Ersatzmodelle (falls das Hauptmodell überlastet ist), ohne Dopplungen */
@@ -16,14 +20,14 @@ export const env = {
   thinkingLevel: () => v("GEMINI_THINKING_LEVEL", "low"),
 
   liveModel: () => v("LIVE_MODEL") || v("REALTIME_MODEL", "gemini-3.8-live"),
-  liveVoice: () => v("LIVE_VOICE") || v("REALTIME_VOICE", "Aoede"),
+  liveVoice: () => v("LIVE_VOICE") || v("REALTIME_VOICE", "Zephyr"),
   callMaxSeconds: () => {
     const n = parseInt(v("CALL_MAX_SECONDS", "300"), 10);
     return Number.isFinite(n) && n >= 30 ? Math.min(n, 1800) : 300;
   },
   transcribeModel: () => v("TRANSCRIBE_MODEL", "gemini-3.5-transcribe"),
   ttsModel: () => v("TTS_MODEL", "gemini-3.8-flash-lite-tts"),
-  ttsVoice: () => v("TTS_VOICE", "Aoede"),
+  ttsVoice: () => v("TTS_VOICE", "Zephyr"),
 
   // Supabase: Secret Key (empfohlen) oder Publishable Key (dann Insert-Policy nötig, siehe supabase/leads.sql)
   supabaseUrl: () => (v("SUPABASE_URL") || v("NEXT_PUBLIC_SUPABASE_URL")).replace(/\/+$/, ""),

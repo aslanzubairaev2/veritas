@@ -1,6 +1,6 @@
 import { Modality } from "@google/genai";
 import { env } from "@/lib/env";
-import { errText, gemini } from "@/lib/gemini";
+import { errText, viaBackends } from "@/lib/gemini";
 import { clientIp, rateLimit, tooMany } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
   if (!input) return Response.json({ error: "Kein Text." }, { status: 400 });
 
   try {
-    const res = await gemini().models.generateContent({
+    const res = await viaBackends("tts", (ai) => ai.models.generateContent({
       model: env.ttsModel(),
       contents: [
         {
@@ -51,10 +51,10 @@ export async function POST(req: Request) {
               speechMetadata: {
                 style:
                   lang === "ru"
-                    ? "тепло, спокойно, чуть медленнее обычного, как внимательный консультант службы ухода"
+                    ? "живо и дружелюбно, в обычном темпе разговора, с естественной интонацией, как приветливая сотрудница по телефону"
                     : lang === "en"
-                      ? "warm, calm, a little slower than usual, like an attentive home-care advisor"
-                      : "warm, ruhig, etwas langsamer, wie eine aufmerksame Beraterin eines Pflegedienstes",
+                      ? "lively and friendly, normal conversational pace, natural intonation, like a warm colleague on the phone"
+                      : "lebendig und freundlich, normales Gesprächstempo, natürliche Betonung, wie eine nette Kollegin am Telefon",
               },
             },
           ],
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
         responseModalities: [Modality.AUDIO],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: env.ttsVoice() } } },
       },
-    });
+    }));
 
     const part = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
     const b64 = part?.inlineData?.data;
