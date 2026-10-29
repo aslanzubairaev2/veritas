@@ -16,7 +16,8 @@ const MARKER = "[[RUECKRUF]]";
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 function visible(text: string) {
-  let s = text.replaceAll(MARKER, "");
+  // Markdown-Reste (z. B. **fett**) entfernen – die Antwort wird als einfacher Text gezeigt
+  let s = text.replaceAll(MARKER, "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, "");
   // während des Streamens ein angefangenes „[[…“ am Ende verstecken
   const open = s.lastIndexOf("[[");
   if (open !== -1 && !s.slice(open).includes("]]") && MARKER.startsWith(s.slice(open))) s = s.slice(0, open);
