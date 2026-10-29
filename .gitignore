@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+
+# Schlüssel niemals ins Git!
+.env
+.env.local
+.env.*.local
