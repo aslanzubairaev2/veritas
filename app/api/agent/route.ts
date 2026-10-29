@@ -32,22 +32,17 @@ export async function POST(req: Request) {
         note: clip(a.note, 400),
         language: clip(a.language, 10),
       };
-      // Name und Telefonnummer nur mit ausdrücklicher Zustimmung – sonst bekommt das Modell eine klare Rückmeldung
-      const wantsPersonal = !!(clip(a.name, 80) || clip(a.phone, 40));
-      if (wantsPersonal && !consent) {
-        const id = await upsertCard(conversationId, source, data);
+      // Ohne Einwilligung wird nichts gespeichert – das Modell bekommt eine klare Rückmeldung
+      if (!consent) {
         return Response.json({
           ok: false,
-          id,
           error: "consent_required",
-          hint: "Name/Telefon NICHT gespeichert. Erst fragen, ob gespeichert werden darf, dann mit consent=true erneut aufrufen.",
+          hint: "NICHTS gespeichert. Erst kurz fragen, ob die Angaben notiert werden dürfen; nach dem Ja mit consent=true erneut aufrufen. Jetzt normal weitersprechen.",
         });
       }
-      if (consent) {
-        data.name = clip(a.name, 80);
-        data.phone = clip(a.phone, 40)?.replace(/[^\d+()\s/-]/g, "");
-        data.consent = true;
-      }
+      data.name = clip(a.name, 80);
+      data.phone = clip(a.phone, 40)?.replace(/[^\d+()\s/-]/g, "");
+      data.consent = true;
       const id = await upsertCard(conversationId, source, data);
       return Response.json({ ok: true, id, ms: Date.now() - t0 });
     }

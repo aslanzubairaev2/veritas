@@ -43,7 +43,8 @@ export const env = {
   /** Subdomain/Host, unter dem die CRM-Startseite erscheint (z. B. veritas-crm.vercel.app) */
   crmHost: () => v("CRM_HOST", "veritas-crm"),
   /** Werkzeuge im Sprachgespräch asynchron (Modell spricht weiter, während gespeichert wird) */
-  liveAsyncTools: () => v("LIVE_ASYNC_TOOLS", "true").toLowerCase() !== "false",
+  // Standard: blockierend – das Modell wartet die ~0,3 s auf das CRM und spricht dann sicher weiter
+  liveAsyncTools: () => v("LIVE_ASYNC_TOOLS", "false").toLowerCase() === "true",
   demoBanner: () => v("DEMO_BANNER", "true").toLowerCase() !== "false",
   demoAuthor: () => v("DEMO_AUTHOR", "Azamat"),
 };

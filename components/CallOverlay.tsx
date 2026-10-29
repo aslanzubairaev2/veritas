@@ -114,6 +114,8 @@ export default function CallOverlay({
     typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `call-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   const asyncRef = useRef(false);
+  const consentRef = useRef(false);
+  const userSpokeRef = useRef(false);
   const [actions, setActions] = useState<{ id: number; text: string; ok: boolean }[]>([]);
   const actionId = useRef(0);
 
@@ -126,7 +128,12 @@ export default function CallOverlay({
   async function handleToolCall(calls: { id?: string; name?: string; args?: Record<string, unknown> }[]) {
     await Promise.all(
       calls.map(async (call) => {
-        const args = call.args ?? {};
+        const args: Record<string, unknown> = { ...(call.args ?? {}) };
+        // Einwilligung gilt für das ganze Gespräch, auch wenn das Modell sie bei späteren Ergänzungen nicht mehr mitschickt
+        if (call.name === "save_client_card") {
+          if (args.consent === true) consentRef.current = true;
+          else if (consentRef.current) args.consent = true;
+        }
         const action = call.name === "save_client_card" ? "card" : call.name === "add_task" ? "task" : null;
         let result: Record<string, unknown> = { ok: false, error: "unknown_tool" };
         if (action) {
@@ -141,7 +148,9 @@ export default function CallOverlay({
             result = { ok: false, error: "network" };
           }
           const ok = result.ok === true;
-          if (action === "card") {
+          if (result.error === "consent_required") {
+            // Kein Fehler für den Nutzer: das Modell fragt jetzt nach der Einwilligung
+          } else if (action === "card") {
             const what = [args.district, args.relation, args.care_level && `PG ${args.care_level}`, args.needs, args.name, args.phone]
               .filter(Boolean)
               .join(" · ");
@@ -155,8 +164,9 @@ export default function CallOverlay({
           }
         }
         const response: Record<string, unknown> = { id: call.id, name: call.name, response: result };
-        // Asynchrone Werkzeuge: Ergebnis still übergeben – das Modell spricht nicht extra darüber
-        if (asyncRef.current) response.scheduling = "SILENT";
+        // Asynchrone Werkzeuge: Ergebnis übergeben, sobald das Modell fertig gesprochen hat – dann spricht es weiter
+        // (SILENT ließ das Modell verstummen, wenn sein Zug nur aus dem Werkzeugaufruf bestand)
+        if (asyncRef.current) response.scheduling = "WHEN_IDLE";
         try { sessionRef.current?.sendToolResponse({ functionResponses: [response] }); } catch {}
       }),
     );
@@ -208,7 +218,9 @@ export default function CallOverlay({
       };
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const tick = () => {
-        const lv = Math.max(level(ra), level(la) * 0.8);
+        const micLv = level(la);
+        if (micLv > 0.04) userSpokeRef.current = true;
+        const lv = Math.max(level(ra), micLv * 0.8);
         if (ringRef.current && !reduce) ringRef.current.style.setProperty("--lv", Math.min(1, lv * 4).toFixed(3));
         rafRef.current = requestAnimationFrame(tick);
       };
@@ -335,13 +347,17 @@ export default function CallOverlay({
         src.connect(node);
         startMeter(mic);
 
-        // 6) Assistent soll zuerst begrüßen
-        session.sendRealtimeInput({
-          text:
-            lang === "ru" ? "(Звонящий подключился. Поздоровайся.)"
-            : lang === "en" ? "(The caller is connected. Please greet them.)"
-            : "(Der Anrufer ist verbunden. Bitte begrüße ihn.)",
-        });
+        // 6) Begrüßung nur, wenn die Person nicht schon selbst angefangen hat zu sprechen –
+        //    sonst antwortet das Modell direkt auf sie (in ihrer Sprache, mit kurzem KI-Hinweis)
+        userSpokeRef.current = false;
+        setTimeout(() => {
+          if (cancelled || endedRef.current || userSpokeRef.current) return;
+          try {
+            sessionRef.current?.sendRealtimeInput({
+              text: "(Anruf verbunden, die Person hat noch nichts gesagt. Begrüße sie jetzt kurz, wie in den Anweisungen beschrieben.)",
+            });
+          } catch {}
+        }, 700);
 
         setPhase("listening");
         asyncRef.current = token.asyncTools === true;
