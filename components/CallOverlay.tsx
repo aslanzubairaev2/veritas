@@ -267,7 +267,18 @@ export default function CallOverlay({
         const { GoogleGenAI, Modality } = await import("@google/genai");
         const connect = (apiVersion: "v1beta" | "v1alpha") =>
           new Promise<any>((resolve, reject) => {
+            // Bereit erst, wenn BEIDES da ist: die Sitzung (connect) und die erste Server-Nachricht (setupComplete).
+            // Die Nachricht kann vor dem Ende von connect() eintreffen.
             let ready = false;
+            let gotMessage = false;
+            let session: any = null;
+            const tryResolve = () => {
+              if (!ready && gotMessage && session) {
+                ready = true;
+                sessionRef.current = session;
+                resolve(session);
+              }
+            };
             const ai = new GoogleGenAI({ apiKey: token.token, httpOptions: { apiVersion } });
             ai.live
               .connect({
@@ -276,10 +287,8 @@ export default function CallOverlay({
                 callbacks: {
                   onopen: () => {},
                   onmessage: (m: any) => {
-                    if (!ready) {
-                      ready = true;
-                      resolve(sessionRef.current);
-                    }
+                    gotMessage = true;
+                    tryResolve();
                     onMessage(m);
                   },
                   onerror: (e: unknown) => console.warn("live error", apiVersion, e),
@@ -293,9 +302,15 @@ export default function CallOverlay({
                 },
               })
               .then((s) => {
-                sessionRef.current = s;
+                session = s;
+                tryResolve();
                 // Die erste Antwort des Servers (setupComplete) bestätigt die Sitzung
-                setTimeout(() => !ready && reject(new Error("setup timeout")), 8000);
+                setTimeout(() => {
+                  if (!ready) {
+                    try { s.close(); } catch {}
+                    reject(new Error("setup timeout"));
+                  }
+                }, 10000);
               }, reject);
           });
 
