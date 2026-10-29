@@ -78,29 +78,54 @@ TELEFONGESPRÄCH
 - Keine langen Aufzählungen: höchstens zwei Punkte auf einmal, dann fragen, ob die Person mehr wissen möchte.
 - Nur Telefonnummern deutlich und langsamer in Zweiergruppen sprechen.
 
-RÜCKRUF (nur wenn sinnvoll, siehe „Nächster Schritt“)
-1. Erkläre kurz, worum es im Rückruf geht.
-2. Frag ausdrücklich um Erlaubnis, zum Beispiel: „Darf ich dafür Ihren Namen und Ihre Telefonnummer speichern? Wir nutzen sie nur für diesen Rückruf.“
-3. Nur bei einem klaren Ja: nacheinander Name, Telefonnummer, Bezirk. Wiederhole die Nummer Ziffer für Ziffer und lass sie bestätigen.
-4. Dann rufe save_callback_request mit consent = true auf. Ohne Ja kein Aufruf.
-5. Sag erst nach Erfolg des Werkzeugs, dass sich das Büro in den Bürozeiten meldet (Mo–Fr 8–16 Uhr). Danach frag, ob du noch bei etwas helfen kannst.`;
+KUNDENKARTE IM CRM (läuft nebenbei, während du sprichst)
+- Du hast zwei Werkzeuge, die echt in das CRM des Pflegedienstes schreiben: save_client_card und add_task.
+- Sobald du etwas Neues und Wichtiges erfährst (Bezirk, für wen die Hilfe ist, Pflegegrad, Hilfebedarf, Anliegen), rufe save_client_card mit genau diesen neuen Angaben auf. Mehrmals im Gespräch ist richtig – jedes Mal nur das Neue.
+- Kündige das nicht an und kommentiere es nicht („ich speichere …“). Sprich einfach normal weiter.
+- Keine Diagnosen speichern. Unter needs nur den Hilfebedarf im Alltag (z. B. „Hilfe beim Waschen, Demenz-Betreuung, Einkauf“).
+- Name und Telefonnummer: erst fragen, ob du sie für einen Rückruf speichern darfst. Nur nach einem klaren Ja save_client_card mit name, phone und consent = true aufrufen. Nummer vorher Ziffer für Ziffer bestätigen lassen. Meldet das Werkzeug consent_required, hast du nicht gefragt – hol das nach.
+- Wird etwas vereinbart (Rückruf, Beratungsbesuch, Unterlagen schicken, Begutachtung begleiten), rufe add_task auf, mit einem kurzen Titel und – falls genannt – dem Zeitpunkt in Worten (z. B. „morgen 10 Uhr“).
+- Sag nur dann, dass ein Rückruf vereinbart ist, wenn add_task erfolgreich war.`;
 }
 
-// Werkzeug für den Sprachassistenten (Gemini Live, Format „functionDeclarations“)
-export const callbackTool = {
-  name: "save_callback_request",
-  description:
-    "Speichert eine Rückruf-Anfrage für das Büro des Pflegedienstes. Nur aufrufen, nachdem die Person der Speicherung ausdrücklich zugestimmt und Name und Telefonnummer bestätigt hat.",
-  parametersJsonSchema: {
-    type: "object",
-    properties: {
-      name: { type: "string", description: "Name der Person" },
-      phone: { type: "string", description: "Telefonnummer, nur Ziffern und +" },
-      district: { type: "string", description: "Bezirk oder Ort, z. B. Marzahn" },
-      concern: { type: "string", description: "Anliegen in einem Satz, ohne Diagnosen" },
-      language: { type: "string", enum: ["de", "ru", "en"], description: "Sprache des Gesprächs" },
-      consent: { type: "boolean", description: "true nur, wenn die Person ausdrücklich zugestimmt hat, Name und Telefonnummer für den Rückruf zu speichern" },
+// Werkzeuge des Sprachassistenten (Gemini Live, Format „functionDeclarations“).
+// behavior NON_BLOCKING: das Modell spricht weiter, während im Hintergrund gespeichert wird.
+export function crmTools(nonBlocking: boolean) {
+  const behavior = nonBlocking ? { behavior: "NON_BLOCKING" as never } : {};
+  return [
+    {
+      name: "save_client_card",
+      ...behavior,
+      description:
+        "Legt die Kundenkarte dieses Gesprächs im CRM an oder ergänzt sie. Nur neue Angaben übergeben. Name/Telefon nur mit consent=true nach ausdrücklicher Zustimmung.",
+      parametersJsonSchema: {
+        type: "object",
+        properties: {
+          district: { type: "string", description: "Bezirk/Ort, z. B. Schöneberg" },
+          relation: { type: "string", description: "Für wen die Hilfe ist und wer anruft, z. B. „Mutter (89) – Anruferin ist die Tochter“" },
+          care_level: { type: "string", description: "Pflegegrad, z. B. „2“, „keiner“, „beantragt“" },
+          needs: { type: "string", description: "Hilfebedarf im Alltag, ohne Diagnosen" },
+          concern: { type: "string", description: "Anliegen in einem Satz" },
+          note: { type: "string", description: "Weitere wichtige Notiz für das Büro" },
+          language: { type: "string", enum: ["de", "ru", "en"] },
+          name: { type: "string", description: "Name (nur mit consent=true)" },
+          phone: { type: "string", description: "Telefonnummer, Ziffern und + (nur mit consent=true)" },
+          consent: { type: "boolean", description: "true nur nach ausdrücklicher Zustimmung zur Speicherung von Name/Telefon" },
+        },
+      },
     },
-    required: ["name", "phone", "consent"],
-  },
-};
+    {
+      name: "add_task",
+      ...behavior,
+      description: "Legt im CRM eine Aufgabe für das Büro an, z. B. Rückruf oder Beratungsbesuch.",
+      parametersJsonSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Kurzer Titel, z. B. „Rückruf: Beratung Pflegegrad“" },
+          due: { type: "string", description: "Zeitpunkt in Worten, z. B. „morgen 10 Uhr“" },
+        },
+        required: ["title"],
+      },
+    },
+  ];
+}

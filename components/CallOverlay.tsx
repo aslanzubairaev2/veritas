@@ -109,31 +109,57 @@ export default function CallOverlay({
     }
   }
 
+  // Werkzeuge des Assistenten → echte Einträge im CRM (über /api/agent)
+  const convRef = useRef<string>(
+    typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `call-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  const asyncRef = useRef(false);
+  const [actions, setActions] = useState<{ id: number; text: string; ok: boolean }[]>([]);
+  const actionId = useRef(0);
+
+  function logAction(text: string, ok: boolean) {
+    const id = ++actionId.current;
+    setActions((prev) => [...prev, { id, text, ok }].slice(-3));
+    setTimeout(() => setActions((prev) => prev.filter((x) => x.id !== id)), 6000);
+  }
+
   async function handleToolCall(calls: { id?: string; name?: string; args?: Record<string, unknown> }[]) {
-    const responses = [];
-    for (const call of calls) {
-      let result: Record<string, unknown> = { ok: false, error: "unknown_tool" };
-      if (call.name === "save_callback_request") {
-        try {
-          const args = call.args ?? {};
-          const res = await fetch("/api/lead", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...args, source: "call", language: (args.language as string) || lang }),
-          });
-          const data = await res.json().catch(() => ({}));
-          result = res.ok ? { ok: true } : { ok: false, error: data?.error || "save_failed" };
-          if (res.ok) {
-            leadRef.current = true;
-            setLeadSaved(true);
+    await Promise.all(
+      calls.map(async (call) => {
+        const args = call.args ?? {};
+        const action = call.name === "save_client_card" ? "card" : call.name === "add_task" ? "task" : null;
+        let result: Record<string, unknown> = { ok: false, error: "unknown_tool" };
+        if (action) {
+          try {
+            const res = await fetch("/api/agent", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action, conversationId: convRef.current, source: "call", args: { language: lang, ...args } }),
+            });
+            result = await res.json().catch(() => ({ ok: false, error: "bad_response" }));
+          } catch {
+            result = { ok: false, error: "network" };
           }
-        } catch {
-          result = { ok: false, error: "network" };
+          const ok = result.ok === true;
+          if (action === "card") {
+            const what = [args.district, args.relation, args.care_level && `PG ${args.care_level}`, args.needs, args.name, args.phone]
+              .filter(Boolean)
+              .join(" · ");
+            logAction(`${ok ? t.crmCardSaved : t.crmNotSaved}${what ? `: ${String(what).slice(0, 60)}` : ""}`, ok);
+            if (ok && args.consent === true) {
+              leadRef.current = true;
+              setLeadSaved(true);
+            }
+          } else {
+            logAction(`${ok ? t.crmTaskSaved : t.crmNotSaved}: ${String(args.title ?? "").slice(0, 60)}`, ok);
+          }
         }
-      }
-      responses.push({ id: call.id, name: call.name, response: result });
-    }
-    try { sessionRef.current?.sendToolResponse({ functionResponses: responses }); } catch {}
+        const response: Record<string, unknown> = { id: call.id, name: call.name, response: result };
+        // Asynchrone Werkzeuge: Ergebnis still übergeben – das Modell spricht nicht extra darüber
+        if (asyncRef.current) response.scheduling = "SILENT";
+        try { sessionRef.current?.sendToolResponse({ functionResponses: [response] }); } catch {}
+      }),
+    );
   }
 
   function onMessage(msg: any) {
@@ -318,6 +344,7 @@ export default function CallOverlay({
         });
 
         setPhase("listening");
+        asyncRef.current = token.asyncTools === true;
         const max = Number(token.maxSeconds) || 300;
         const end = Date.now() + max * 1000;
         setLeft(max);
@@ -377,6 +404,11 @@ export default function CallOverlay({
 
       <p className="call-status" aria-live="polite">{status}</p>
       {leadSaved && <p className="call-badge">✓ {t.callLeadSaved}</p>}
+      <div className="call-actions-log" aria-live="polite">
+        {actions.map((a) => (
+          <p key={a.id} className={`crm-chip${a.ok ? "" : " bad"}`}>{a.ok ? "✓" : "!"} {a.text}</p>
+        ))}
+      </div>
 
       <div className="call-lines" aria-live="polite">
         {lines.slice(-4).map((l) => (

@@ -1,5 +1,6 @@
 import { env } from "./env";
 import { getTenant } from "./tenant";
+import { addTask, crmConfigured, upsertCard } from "./crmdb";
 
 export type Lead = {
   name: string;
@@ -8,6 +9,7 @@ export type Lead = {
   concern?: string;
   language?: string;
   source: "chat" | "call";
+  conversationId?: string;
 };
 
 const clip = (s: unknown, n: number) => (typeof s === "string" ? s.trim().slice(0, n) : "");
@@ -24,6 +26,7 @@ export function validateLead(input: Record<string, unknown>, source: Lead["sourc
     concern: clip(input.concern, 400) || undefined,
     language: clip(input.language, 10) || undefined,
     source,
+    conversationId: /^[\w-]{8,64}$/.test(String(input.conversationId ?? "")) ? String(input.conversationId) : undefined,
   };
 }
 
@@ -32,22 +35,23 @@ export async function deliverLead(lead: Lead): Promise<string[]> {
   const delivered: string[] = [];
   const { company } = getTenant();
 
-  if (env.supabaseUrl() && env.supabaseKey()) {
-    const key = env.supabaseKey();
-    const headers: Record<string, string> = {
-      apikey: key,
-      "Content-Type": "application/json",
-      Prefer: "return=minimal",
-    };
-    // Alte JWT-Schlüssel (service_role/anon) brauchen zusätzlich den Authorization-Header
-    if (key.startsWith("eyJ")) headers.Authorization = `Bearer ${key}`;
-    const res = await fetch(`${env.supabaseUrl()}/rest/v1/leads`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ ...lead, company_id: company.id }),
-    });
-    if (res.ok) delivered.push("supabase");
-    else console.error("Supabase lead insert failed", res.status, (await res.text()).slice(0, 300));
+  // CRM-Datenbank (Karte + Aufgabe „Rückruf“), alle Firmen in einer Datenbank, getrennt über company_id
+  if (crmConfigured()) {
+    try {
+      const conv = lead.conversationId || `form-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await upsertCard(conv, lead.source, {
+        name: lead.name,
+        phone: lead.phone,
+        district: lead.district,
+        concern: lead.concern,
+        language: lead.language,
+        consent: true,
+      });
+      await addTask(conv, lead.source, "Rückruf vereinbaren", "Bürozeiten");
+      delivered.push("crm");
+    } catch (e) {
+      console.error("CRM lead failed", e instanceof Error ? e.message.slice(0, 200) : e);
+    }
   }
 
   if (env.telegramToken() && env.telegramChat()) {

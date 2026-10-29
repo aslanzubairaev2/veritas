@@ -3,10 +3,22 @@ import { ACCESS_COOKIE, accessToken } from "@/lib/access";
 
 // Zugangsschutz: Ist DEMO_ACCESS_CODE gesetzt, sieht nur, wer den Code kennt.
 export async function proxy(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  const host = (req.headers.get("host") ?? "").toLowerCase();
+  const crmHost = (process.env.CRM_HOST ?? "veritas-crm").trim().toLowerCase();
+
+  // Subdomain der CRM (z. B. veritas-crm.vercel.app): Startseite = /crm
+  if (crmHost && host.startsWith(crmHost) && pathname === "/") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/crm";
+    return NextResponse.rewrite(url);
+  }
+  // Die CRM hat ein eigenes Passwort – der Demo-Zugangscode gilt dort nicht
+  if (pathname === "/crm" || pathname.startsWith("/api/crm")) return NextResponse.next();
+
   const code = (process.env.DEMO_ACCESS_CODE ?? "").trim();
   if (!code) return NextResponse.next();
 
-  const { pathname } = req.nextUrl;
   if (pathname === "/unlock" || pathname === "/api/unlock") return NextResponse.next();
 
   const cookie = req.cookies.get(ACCESS_COOKIE)?.value;

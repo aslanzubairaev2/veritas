@@ -38,6 +38,12 @@ export const env = {
   telegramChat: () => v("TELEGRAM_CHAT_ID"),
 
   accessCode: () => v("DEMO_ACCESS_CODE"),
+  crmDbKey: () => v("CRM_DB_KEY"),
+  crmPassword: () => v("CRM_PASSWORD"),
+  /** Subdomain/Host, unter dem die CRM-Startseite erscheint (z. B. veritas-crm.vercel.app) */
+  crmHost: () => v("CRM_HOST", "veritas-crm"),
+  /** Werkzeuge im Sprachgespräch asynchron (Modell spricht weiter, während gespeichert wird) */
+  liveAsyncTools: () => v("LIVE_ASYNC_TOOLS", "true").toLowerCase() !== "false",
   demoBanner: () => v("DEMO_BANNER", "true").toLowerCase() !== "false",
   demoAuthor: () => v("DEMO_AUTHOR", "Azamat"),
 };

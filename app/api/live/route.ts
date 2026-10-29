@@ -1,7 +1,7 @@
 import { Modality } from "@google/genai";
 import { env } from "@/lib/env";
 import { errText, gemini } from "@/lib/gemini";
-import { callbackTool, voiceInstructions } from "@/lib/prompt";
+import { crmTools, voiceInstructions } from "@/lib/prompt";
 import { clientIp, rateLimit, tooMany } from "@/lib/ratelimit";
 import { VOCAB } from "@/lib/vocab";
 
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
             responseModalities: [Modality.AUDIO],
             systemInstruction: voiceInstructions(language),
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: env.liveVoice() } } },
-            tools: [{ functionDeclarations: [callbackTool] }],
+            tools: [{ functionDeclarations: crmTools(env.liveAsyncTools()) }],
             inputAudioTranscription: {
               languageCodes:
                 language === "ru" ? ["ru-RU", "de-DE", "en-US"] : language === "en" ? ["en-US", "de-DE", "ru-RU"] : ["de-DE", "ru-RU", "en-US"],
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     }
     if (!token.name) throw new Error("no token name");
     return Response.json(
-      { token: token.name, model: env.liveModel(), maxSeconds },
+      { token: token.name, model: env.liveModel(), maxSeconds, asyncTools: env.liveAsyncTools() },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {
