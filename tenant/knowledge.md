@@ -32,6 +32,14 @@ Diese Datei ist die einzige Quelle des Assistenten für Fakten über VERITAS. Ä
 
 Hinweis: Welcher Standort zuständig ist, hängt von der Wohnadresse ab. Im Zweifel den nächstgelegenen Standort anrufen.
 
+## Berliner Bezirke und Ortsteile (für die Zuordnung zum Standort)
+- Charlottenburg-Wilmersdorf: Charlottenburg, Wilmersdorf, Westend, Halensee, Grunewald, Schmargendorf → Standort Charlottenburg (Sophie-Charlotten-Straße 30).
+- Marzahn-Hellersdorf: Marzahn, Hellersdorf, Biesdorf, Kaulsdorf, Mahlsdorf → Standort Marzahn (Marzahner Promenade 12).
+- Tempelhof-Schöneberg: Schöneberg, Friedenau, Tempelhof, Mariendorf, Marienfelde, Lichtenrade → Standort Süd (Fregestraße 51, Friedenau).
+- Steglitz-Zehlendorf: Steglitz, Lichterfelde, Lankwitz, Zehlendorf, Dahlem, Wannsee, Nikolassee → Standort Süd (Fregestraße 51).
+- Brandenburg südlich von Berlin (Zossen, Wünsdorf, Rangsdorf, Blankenfelde-Mahlow, Teltow-Fläming) → Geschäftsstelle Zossen.
+- Andere Bezirke (Mitte, Pankow, Lichtenberg, Friedrichshain-Kreuzberg, Neukölln, Treptow-Köpenick, Spandau, Reinickendorf): Die Website nennt dort keinen eigenen Standort. Ob VERITAS dorthin kommt, bitte telefonisch klären; als erste Anlaufstelle den nächstgelegenen Standort nennen (z. B. Lichtenberg → Marzahn, Spandau → Charlottenburg, Neukölln → Süd).
+
 ## Leistungen
 - Grundpflege: Hilfe bei Körperpflege, Anziehen, Essen und Trinken, Mobilität – Unterstützung bei den Aktivitäten des täglichen Lebens.
 - Behandlungspflege (häusliche Krankenpflege, nur auf ärztliche Verordnung): Injektionen, Medikamentengabe und Stellen von Medikamenten, Verbandswechsel, Katheterisierung und Katheterwechsel, Blut- und Urinzuckermessung, Blutdruckkontrolle, Dekubitusbehandlung, Sondenernährung. Durchgeführt von examinierten Pflegefachkräften in enger Abstimmung mit dem Arzt. Kosten trägt in der Regel die Krankenkasse. Auf Wunsch und ärztliche Empfehlung werden Patienten oder Angehörige angeleitet, z. B. Insulin selbst zu spritzen. Ziel u. a.: frühere Rückkehr aus dem Krankenhaus.
