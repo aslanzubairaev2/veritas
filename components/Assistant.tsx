@@ -171,31 +171,123 @@ export default function Assistant({
   }
 
   // ---------- Mikrofon ----------
+  // Nach so viel Stille gilt die Frage als fertig und wird automatisch gesendet
+  const SILENCE_MS = 1000;
+
   async function micPress() {
+    // Zweiter Druck = sofort fertig
     if (mic === "recording") {
       recRef.current?.stop();
       return;
     }
     if (mic === "browser") {
-      speechRef.current?.stop();
+      speechRef.current?.finish?.();
       return;
     }
     if (mic === "transcribing") return;
     stopSpeaking();
+    setHint("");
 
-    // 1) Beste Qualität: Aufnahme → Server-Spracherkennung
+    // 1) Schnellster Weg: Spracherkennung des Browsers (Chrome, Edge, Android, Safari).
+    //    Text erscheint schon beim Sprechen, nach 1 s Stille wird gesendet.
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SR) {
+      try {
+        const r = new SR();
+        r.lang = lang === "ru" ? "ru-RU" : "de-DE";
+        r.interimResults = true;
+        r.continuous = true;
+        let finalText = "";
+        let interim = "";
+        let done = false;
+        let silence: ReturnType<typeof setTimeout> | undefined;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(silence);
+          try { r.stop(); } catch {}
+          setMic("idle");
+          const text = (finalText + " " + interim).replace(/\s+/g, " ").trim();
+          if (text) send(text);
+          else setInput("");
+        };
+        r.finish = finish;
+        r.onresult = (e: any) => {
+          interim = "";
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const s = e.results[i][0].transcript;
+            if (e.results[i].isFinal) finalText += " " + s;
+            else interim += s;
+          }
+          setInput((finalText + " " + interim).replace(/\s+/g, " ").trim());
+          clearTimeout(silence);
+          silence = setTimeout(finish, SILENCE_MS);
+        };
+        r.onend = finish;
+        r.onerror = (e: any) => {
+          if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
+            done = true;
+            setMic("idle");
+            setHint(t.callMicDenied);
+            return;
+          }
+          finish();
+        };
+        speechRef.current = r;
+        r.start();
+        setMic("browser");
+        return;
+      } catch {
+        /* weiter zu Variante 2 */
+      }
+    }
+
+    // 2) Browser ohne eigene Spracherkennung (z. B. Firefox): Aufnahme → Server (Gemini).
+    //    Aufnahme stoppt selbst nach 1 s Stille.
     if (cfg?.serverSpeech && typeof MediaRecorder !== "undefined" && navigator.mediaDevices?.getUserMedia) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
         const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((m) => MediaRecorder.isTypeSupported?.(m));
         const rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
         chunksRef.current = [];
+
+        // Stille-Erkennung über die Lautstärke
+        const ctx = new AudioContext();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        ctx.createMediaStreamSource(stream).connect(analyser);
+        const buf = new Uint8Array(analyser.fftSize);
+        let heard = false;
+        let quietSince = Date.now();
+        const vad = setInterval(() => {
+          analyser.getByteTimeDomainData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) {
+            const v = (buf[i] - 128) / 128;
+            sum += v * v;
+          }
+          const loud = Math.sqrt(sum / buf.length) > 0.02;
+          if (loud) {
+            heard = true;
+            quietSince = Date.now();
+          } else if (heard && Date.now() - quietSince > SILENCE_MS && rec.state === "recording") {
+            rec.stop();
+          } else if (!heard && Date.now() - quietSince > 8000 && rec.state === "recording") {
+            rec.stop(); // gar nichts gesagt
+          }
+        }, 100);
+
         rec.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
         rec.onstop = async () => {
+          clearInterval(vad);
+          ctx.close().catch(() => {});
           stream.getTracks().forEach((tr) => tr.stop());
+          if (!heard) {
+            setMic("idle");
+            return;
+          }
           const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
           setMic("transcribing");
-          setHint(t.transcribing);
           try {
             const fd = new FormData();
             fd.append("audio", blob);
@@ -204,7 +296,6 @@ export default function Assistant({
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || "");
             setMic("idle");
-            setHint("");
             if (data.text) send(data.text);
           } catch {
             setMic("idle");
@@ -214,49 +305,11 @@ export default function Assistant({
         recRef.current = rec;
         rec.start();
         setMic("recording");
-        setHint(t.micListening);
-        // Sicherheitsgrenze: 60 Sekunden
         setTimeout(() => rec.state === "recording" && rec.stop(), 60_000);
         return;
       } catch {
-        /* weiter zu Variante 2 */
+        /* weiter zu Variante 3 */
       }
-    }
-
-    // 2) Spracherkennung des Browsers (z. B. Chrome)
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SR) {
-      try {
-        const r = new SR();
-        r.lang = lang === "ru" ? "ru-RU" : "de-DE";
-        r.interimResults = true;
-        r.continuous = false;
-        let finalText = "";
-        r.onresult = (e: any) => {
-          let interim = "";
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            const s = e.results[i][0].transcript;
-            if (e.results[i].isFinal) finalText += s;
-            else interim += s;
-          }
-          setInput(finalText + interim);
-        };
-        r.onend = () => {
-          setMic("idle");
-          setHint("");
-          if (finalText.trim()) send(finalText);
-        };
-        r.onerror = () => {
-          setMic("idle");
-          setHint(t.micKeyboard);
-          inputRef.current?.focus();
-        };
-        speechRef.current = r;
-        r.start();
-        setMic("browser");
-        setHint(t.micListening);
-        return;
-      } catch {}
     }
 
     // 3) Rückfall: Mikrofon der Handy-Tastatur
