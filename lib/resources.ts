@@ -48,8 +48,19 @@ export const RESOURCES: Resource[] = [
   {
     id: "md_begutachtung",
     title: { de: "Informationen zur Pflegebegutachtung (Medizinischer Dienst)", ru: "Памятка о визите Medizinischer Dienst (MD)", en: "Information on the care assessment (Medical Service)" },
-    use: "Offizielles Merkblatt des Medizinischen Dienstes: Ablauf der Begutachtung und Checkliste zur Vorbereitung. Auf medizinischerdienst.de auch auf Russisch, Ukrainisch, Englisch, Türkisch, Arabisch u. a. und in Leichter Sprache.",
+    use: "Offizielles Merkblatt des Medizinischen Dienstes (PDF): Ablauf der Begutachtung und Checkliste zur Vorbereitung. Russische und englische Fassung siehe RU/EN-Link.",
     url: "https://medizinischerdienst.de/fileadmin/MD-zentraler-Ordner/Downloads/01_Pflegebegutachtung/250203_DEU_01_BF.pdf",
+    urls: {
+      ru: "https://medizinischerdienst.de/fileadmin/MD-zentraler-Ordner/Downloads/01_Pflegebegutachtung/250203_RUS_01_BF.pdf",
+      en: "https://medizinischerdienst.de/fileadmin/MD-zentraler-Ordner/Downloads/01_Pflegebegutachtung/250203_ENG_01_BF.pdf",
+    },
+  },
+  {
+    id: "begutachtung_info",
+    title: { de: "Pflegebegutachtung: worauf achten? (gesund.bund.de)", ru: "Экспертиза потребности в уходе: на что обратить внимание (gesund.bund.de, по-русски)", en: "Care assessment: what to watch out for (gesund.bund.de)" },
+    use: "Offizielles Gesundheitsportal: wie die Begutachtung abläuft und wie man sich vorbereitet. Auf Russisch verfügbar.",
+    url: "https://gesund.bund.de/pflegebegutachtung",
+    urls: { ru: "https://gesund.bund.de/ru/pflegebegutachtung" },
   },
   {
     id: "pflegetagebuch",
@@ -124,6 +135,7 @@ export function resourcesBlock(mode: "chat" | "voice", company: string): string 
       ? "- Passt eine Stelle zur Frage, nenne sie mit Telefonnummer und/oder Link (die Adresse genau so, wie sie hier steht; bei russisch-/englischsprachigen Personen die RU-/EN-Version, falls vorhanden). Höchstens zwei Links pro Antwort. Erfinde NIE Links oder Nummern, die hier nicht stehen."
       : "- Passt eine Stelle zur Frage, nenne sie kurz und sag die Telefonnummer, falls vorhanden. Links liest du nicht vor: rufe show_link mit der id auf – die Person sieht den Link dann auf dem Bildschirm und später im Chatverlauf. Sag dazu kurz „Ссылку я показала на экране“ / „Den Link sehen Sie jetzt auf dem Bildschirm“. Erfinde NIE Links oder Nummern.";
   return `OFFIZIELLE STELLEN, FORMULARE UND RATGEBER (unabhängig von ${company})
+- Ordne Links genau zu: Jeder Link gehört nur zu dem Eintrag, unter dem er steht. Behaupte nie, ein Link sei z. B. „auf Russisch“, wenn kein RU-Link dabeisteht.
 - Diese Stellen sind neutral und kostenlos. Empfiehl sie ehrlich, wenn sie der Person helfen (z. B. Antrag, Begutachtung, Widerspruch, Entlastung) – auch wenn ${company} ebenfalls hilft. Sag dazu, dass es offizielle bzw. unabhängige Stellen sind.
 - Für den Pflegegrad-Antrag: zuerst bei der eigenen Pflegekasse anrufen (die Nummer steht auf der Rückseite der Krankenversicherungskarte bzw. auf der Website der Krankenkasse) und sagen „Ich beantrage Leistungen der Pflegeversicherung“; die Kasse schickt ihr Formular. Besser zusätzlich schriftlich, damit das Antragsdatum belegt ist.
 ${how}
