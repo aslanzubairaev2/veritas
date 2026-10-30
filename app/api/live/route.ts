@@ -17,11 +17,13 @@ export async function POST(req: Request) {
   }
   if (!rateLimit(`live:${clientIp(req)}`, 6, 60 * 60_000)) return tooMany();
 
-  const { lang, conversationId, history, lastAt } = (await req.json().catch(() => ({}))) as { lang?: string; conversationId?: unknown; history?: unknown; lastAt?: unknown };
+  const { lang, speechLang, conversationId, history, lastAt } = (await req.json().catch(() => ({}))) as { lang?: string; speechLang?: string; conversationId?: unknown; history?: unknown; lastAt?: unknown };
   // Unterbrochenes Gespräch: letzter Beitrag vor weniger als 2 Stunden
   const minutesAgo = typeof lastAt === "number" && lastAt > 0 ? Math.max(0, Math.round((Date.now() - lastAt) / 60_000)) : null;
   const resume = minutesAgo !== null && minutesAgo < 120 && Array.isArray(history) && history.length > 0;
-  const language = lang === "ru" || lang === "en" ? lang : "de";
+  const ui = lang === "ru" || lang === "en" ? lang : "de";
+  // Gesprochene Sprache (vom Gerät erkannt) hat Vorrang – die Spracherkennung läuft nur in dieser einen Sprache
+  const language = speechLang === "ru" || speechLang === "en" || speechLang === "de" ? speechLang : ui;
   const maxSeconds = env.callMaxSeconds();
 
   const memory = await memoryBlock(convFrom(conversationId), pastFrom(history, 20), "voice", resume ? minutesAgo : null);
@@ -40,8 +42,7 @@ export async function POST(req: Request) {
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: env.liveVoice() } } },
             tools: [{ functionDeclarations: crmTools(env.liveAsyncTools()) }],
             inputAudioTranscription: {
-              languageCodes:
-                language === "ru" ? ["ru-RU", "de-DE", "en-US"] : language === "en" ? ["en-US", "de-DE", "ru-RU"] : ["de-DE", "ru-RU", "en-US"],
+              languageCodes: [language === "ru" ? "ru-RU" : language === "en" ? "en-US" : "de-DE"],
               customVocabulary: VOCAB,
             },
             outputAudioTranscription: {},

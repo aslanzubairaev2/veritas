@@ -9,6 +9,7 @@ import { addCaptureWorklet, rms, toBase64 } from "@/lib/pcm";
 import { conversationId, deleteSession, devMode, listSessions, loadHistory, newSession, resetDevice, saveHistory, switchSession, type Session } from "@/lib/device";
 import { Choices, DocCard, MapCard, TimePicker, parseBlocks, plainText } from "./ChatBlocks";
 import { LINK_HOSTS } from "@/lib/resources";
+import { spokenLang } from "@/lib/speechlang";
 
 const CallOverlay = dynamic(() => import("./CallOverlay"), { ssr: false });
 
@@ -365,7 +366,7 @@ export default function Assistant({
       ctx.createMediaStreamSource(stream).connect(node);
       setMic("live");
 
-      const res = await fetch("/api/stt", { method: "POST" });
+      const res = await fetch("/api/stt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lang: speechLang }) });
       const tok = await res.json().catch(() => ({}));
       if (!res.ok || !tok.token) throw new Error(tok.error || "token");
 
@@ -481,7 +482,7 @@ export default function Assistant({
         try {
           const fd = new FormData();
           fd.append("audio", blob);
-          fd.append("lang", lang);
+          fd.append("lang", speechLang);
           const res = await fetch("/api/transcribe", { method: "POST", body: fd });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || "");
@@ -502,6 +503,8 @@ export default function Assistant({
   }
 
   const started = msgs.length > 0;
+  // Sprache für die Spracherkennung: getippte Nachrichten der Person (Anruf-Mitschriften können falsch erkannt sein), sonst Website-Sprache
+  const speechLang = spokenLang(msgs.filter((m) => m.role === "user" && !m.call).map((m) => m.content), lang);
   const lastAssistantId = [...msgs].reverse().find((m) => m.role === "assistant")?.id;
   const chatReady = cfg?.chat ?? true;
 
@@ -700,6 +703,7 @@ export default function Assistant({
           phone={company.phone}
           phoneHref={company.phoneHref}
           conversationId={conv}
+          speechLang={speechLang}
           locations={company.locations}
           lastAt={[...msgs].reverse().find((m) => m.at)?.at}
           history={msgs.filter((m) => !m.error && m.content).map((m) => ({ role: m.role, content: visible(m.content) }))}

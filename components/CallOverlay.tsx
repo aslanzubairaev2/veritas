@@ -24,6 +24,7 @@ export default function CallOverlay({
   phone,
   phoneHref,
   conversationId,
+  speechLang,
   history,
   lastAt,
   locations,
@@ -34,6 +35,7 @@ export default function CallOverlay({
   phone: string;
   phoneHref: string;
   conversationId: string;
+  speechLang?: Lang;
   history: { role: "user" | "assistant"; content: string }[];
   lastAt?: number;
   locations: Office[];
@@ -407,7 +409,7 @@ export default function CallOverlay({
         const tokenRes = await fetch("/api/live", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lang, conversationId, history: history.slice(-20), lastAt }),
+          body: JSON.stringify({ lang, speechLang, conversationId, history: history.slice(-20), lastAt }),
         });
         const token = await tokenRes.json().catch(() => ({}));
         if (!tokenRes.ok || !token.token) throw new Error(token.error || "token");

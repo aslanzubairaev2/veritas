@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       contents: [{ role: "user", parts: [audioPart] }],
       config: {
         audioTranscriptionConfig: {
-          languageCodes: lang === "ru" ? ["ru-RU", "de-DE", "en-US"] : lang === "en" ? ["en-US", "de-DE", "ru-RU"] : ["de-DE", "ru-RU", "en-US"],
+          languageCodes: [lang === "ru" ? "ru-RU" : lang === "en" ? "en-US" : "de-DE"],
           customVocabulary: VOCAB,
         },
       },
