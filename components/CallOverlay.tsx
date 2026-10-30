@@ -139,12 +139,7 @@ export default function CallOverlay({
     await Promise.all(
       calls.map(async (call) => {
         const args: Record<string, unknown> = { ...(call.args ?? {}) };
-        // Einwilligung gilt für das ganze Gespräch, auch wenn das Modell sie bei späteren Ergänzungen nicht mehr mitschickt
-        if (call.name === "save_client_card") {
-          if (args.consent === true) consentRef.current = true;
-          else if (consentRef.current) args.consent = true;
-        }
-        const action = call.name === "save_client_card" ? "card" : call.name === "add_task" ? "task" : null;
+        const action = call.name === "save_client_card" ? "card" : call.name === "add_task" ? "task" : call.name === "record_consent" ? "consent" : null;
         let result: Record<string, unknown> = { ok: false, error: "unknown_tool" };
         if (action) {
           try {
@@ -160,12 +155,16 @@ export default function CallOverlay({
           const ok = result.ok === true;
           if (result.error === "consent_required") {
             // Kein Fehler für den Nutzer: das Modell fragt jetzt nach der Einwilligung
+          } else if (action === "consent") {
+            const granted = args.granted === true;
+            consentRef.current = granted;
+            logAction(ok ? (granted ? t.consentGiven : t.consentDenied) : t.crmNotSaved, ok);
           } else if (action === "card") {
             const what = [args.district, args.relation, args.care_level && `PG ${args.care_level}`, args.needs, args.name, args.phone]
               .filter(Boolean)
               .join(" · ");
             logAction(`${ok ? t.crmCardSaved : t.crmNotSaved}${what ? `: ${String(what).slice(0, 60)}` : ""}`, ok);
-            if (ok && args.consent === true) {
+            if (ok && (args.name || args.phone)) {
               leadRef.current = true;
               setLeadSaved(true);
             }

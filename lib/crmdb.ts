@@ -73,3 +73,7 @@ export async function getLead(conversationId: string): Promise<LeadInfo | null> 
     return null;
   }
 }
+
+/** Einwilligung widerrufen: Name/Telefon sofort entfernen, Vermerk für das Büro. */
+export const revokeConsent = (conversationId: string, note: string) =>
+  rpc<number | null>("agent_revoke_consent", { p_conversation: conversationId, p_note: note });

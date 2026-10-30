@@ -1,4 +1,4 @@
-import { addTask, crmConfigured, getLead, upsertCard, type CardData } from "@/lib/crmdb";
+import { addTask, crmConfigured, getLead, revokeConsent, upsertCard, type CardData } from "@/lib/crmdb";
 import { errText } from "@/lib/gemini";
 import { clientIp, rateLimit, tooMany } from "@/lib/ratelimit";
 
@@ -22,8 +22,8 @@ export async function POST(req: Request) {
 
   try {
     if (body.action === "card") {
-      // Einwilligung aus einem früheren Gespräch auf diesem Gerät gilt weiter
-      const consent = a.consent === true || (await getLead(conversationId))?.consent === true;
+      // Speichern nur, wenn die Einwilligung vorher eigens festgehalten wurde (record_consent oder Formular)
+      const consent = (await getLead(conversationId))?.consent === true;
       const data: CardData = {
         district: clip(a.district, 80),
         relation: clip(a.relation, 120),
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
         return Response.json({
           ok: false,
           error: "consent_required",
-          hint: "NICHTS gespeichert. Erst kurz fragen, ob die Angaben notiert werden dürfen; nach dem Ja mit consent=true erneut aufrufen. Jetzt normal weitersprechen.",
+          hint: "NICHTS gespeichert. Stell jetzt die Einwilligungsfrage; nach einem eindeutigen Ja record_consent aufrufen, dann erneut speichern.",
         });
       }
       data.name = clip(a.name, 80);
@@ -47,7 +47,27 @@ export async function POST(req: Request) {
       const id = await upsertCard(conversationId, source, data);
       return Response.json({ ok: true, id, ms: Date.now() - t0 });
     }
+    if (body.action === "consent") {
+      const granted = a.granted === true;
+      const words = clip(a.words, 200) ?? "";
+      const when = new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" });
+      const lead = await getLead(conversationId);
+      if (granted) {
+        const id = await upsertCard(conversationId, source, {
+          consent: true,
+          language: clip(a.language, 10),
+          note: `Einwilligung zur Speicherung erteilt (${source === "call" ? "mündlich im Anruf" : "im Chat"}, ${when}): „${words}“`,
+        });
+        return Response.json({ ok: true, id, consent: true });
+      }
+      // Nein oder Widerruf: Einwilligung zurücknehmen, Name/Telefon sofort entfernen
+      if (lead) await revokeConsent(conversationId, `Einwilligung abgelehnt/widerrufen (${when}): „${words}“ – übrige Angaben bitte löschen.`);
+      return Response.json({ ok: true, consent: false, note: "Nichts mehr speichern; allgemein weiterberaten." });
+    }
     if (body.action === "task") {
+      if ((await getLead(conversationId))?.consent !== true) {
+        return Response.json({ ok: false, error: "consent_required", hint: "Erst Einwilligung einholen (record_consent)." });
+      }
       const title = clip(a.title, 200);
       if (!title || title.length < 2) return Response.json({ ok: false, error: "title_missing" }, { status: 400 });
       const id = await addTask(conversationId, source, title, clip(a.due, 80));
