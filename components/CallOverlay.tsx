@@ -156,9 +156,14 @@ export default function CallOverlay({
   function submitTyped(value: string, kind: "name" | "phone" | "time" | "text") {
     const v = value.trim().slice(0, 200);
     if (!v) return;
-    const what = kind === "name" ? "Name" : kind === "phone" ? "Telefonnummer" : kind === "time" ? "Wunschzeit für den Rückruf" : "Nachricht";
+    // Hinweis in der Sprache des Gesprächs, damit das Modell nicht ins Deutsche wechselt
+    const W = {
+      ru: { name: "имя", phone: "номер телефона", time: "удобное время для звонка", text: "сообщение", pre: "Собеседник ввёл на экране" },
+      de: { name: "Name", phone: "Telefonnummer", time: "Wunschzeit für den Rückruf", text: "Nachricht", pre: "Die Person hat eingetippt" },
+      en: { name: "name", phone: "phone number", time: "preferred callback time", text: "message", pre: "The caller typed on screen" },
+    }[lang];
     try {
-      sessionRef.current?.sendRealtimeInput({ text: `(Die Person hat eingetippt – ${what}: ${v})` });
+      sessionRef.current?.sendRealtimeInput({ text: `(${W.pre} – ${W[kind]}: ${v})` });
     } catch {}
     transcriptRef.current.push({ role: "user", content: v });
     // Eingetippter Name / Nummer: direkt in die Karte (der Server prüft die Einwilligung)
