@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { T, type Lang } from "@/lib/i18n";
 import { addCaptureWorklet, toBase64 } from "@/lib/pcm";
+import { RESOURCES, resourceUrl, type Resource } from "@/lib/resources";
 
 type Line = { who: "user" | "bot"; text: string; id: number };
 type Phase = "connecting" | "listening" | "speaking" | "ended" | "error";
@@ -146,6 +147,7 @@ export default function CallOverlay({
   const transcriptRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const asyncRef = useRef(false);
   const consentRef = useRef(false);
+  const [links, setLinks] = useState<Resource[]>([]);
   const userSpokeRef = useRef(false);
   const [actions, setActions] = useState<{ id: number; text: string; ok: boolean }[]>([]);
   const actionId = useRef(0);
@@ -160,6 +162,19 @@ export default function CallOverlay({
     await Promise.all(
       calls.map(async (call) => {
         const args: Record<string, unknown> = { ...(call.args ?? {}) };
+        if (call.name === "show_link") {
+          const r = RESOURCES.find((x) => x.id === args.id);
+          if (r) {
+            setLinks((prev) => (prev.some((x) => x.id === r.id) ? prev : [...prev, r]));
+            const url = resourceUrl(r, lang);
+            transcriptRef.current.push({ role: "assistant", content: `${r.title[lang]}${r.phone ? ` – ${r.phone}` : ""}\n${url}` });
+            curRef.current.bot = null;
+          }
+          try {
+            sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: r ? { ok: true, shown: r.title.de } : { ok: false, error: "unknown_id" } }] });
+          } catch {}
+          return;
+        }
         if (call.name === "end_call") {
           try { sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: { ok: true } }] }); } catch {}
           endAfterGoodbye();
@@ -465,6 +480,18 @@ export default function CallOverlay({
         ))}
       </div>
 
+      {links.length > 0 && (
+        <ul className="call-links">
+          {links.map((r) => (
+            <li key={r.id}>
+              <a href={resourceUrl(r, lang)} target="_blank" rel="noopener noreferrer">
+                <span aria-hidden="true">🔗</span> {r.title[lang]}
+              </a>
+              {r.phone && <a className="call-link-phone" href={`tel:${r.phone.replace(/[^\d+]/g, "")}`}>{r.phone}</a>}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="call-lines" aria-live="polite">
         {lines.slice(-4).map((l) => (
           <p key={l.id} className={`cl ${l.who}`}>{l.text}</p>

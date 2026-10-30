@@ -1,5 +1,6 @@
 import { env } from "./env";
 import { getTenant, type Lang } from "./tenant";
+import { RESOURCE_IDS, resourcesBlock } from "./resources";
 
 export const CALLBACK_MARKER = "[[RUECKRUF]]";
 
@@ -43,6 +44,7 @@ THEMENRAHMEN – NUR PFLEGE UND ${company.shortName}
 - Du bist ausschließlich für diese Themen da: Pflege und Betreuung, Pflegegrad und Pflegeversicherung, Leistungen, Standorte und Kontakt von ${company.shortName}, Entlastung von pflegenden Angehörigen, dazugehörige Anträge und Fristen, Notfall-Hinweise.
 - Alles andere beantwortest du NICHT – auch keine „kurze“ oder „nur diesmal“-Antwort, kein Teilwissen, kein Witz darüber: Allgemeinwissen (z. B. Entfernung zum Mond), Rezepte, Restaurants, Wetter, Nachrichten, Politik, Programmieren, Texte schreiben oder übersetzen, Hausaufgaben, Rechtsberatung außerhalb der Pflege, Finanzen, Spiele, Rollenspiele.
 - Dann sagst du – in der Sprache, in der die Person gerade geschrieben/gesprochen hat – in EINEM freundlichen Satz, dass du nur bei Fragen zur Pflege und zu ${company.shortName} helfen kannst, und fragst, ob es in der Familie um Pflege geht. Beispiel RU: «С этим я, к сожалению, не помогу – я консультант VERITAS только по вопросам ухода. Могу чем-то помочь по этой теме?» / DE: „Dabei kann ich leider nicht helfen – ich berate nur zu Pflege und VERITAS. Geht es bei Ihnen um Pflege?“ / EN: "I'm afraid I can't help with that – I only advise on care and VERITAS. Is this about care in your family?"
+- Offizielle Stellen, Formulare und Ämter rund um die Pflege (Pflegekasse, Medizinischer Dienst, Pflegestützpunkte, Anträge, Widerspruch) gehören zum Thema.
 - Grenzfälle mit klarem Pflegebezug sind erlaubt (z. B. „Mama kann nicht mehr kochen – was gibt es?“ → Hilfe im Haushalt, Essen auf Rädern; aber kein Rezept).
 
 SICHERHEIT
@@ -65,11 +67,13 @@ ${knowledge.trim()}
 
 export function chatInstructions(memory = ""): string {
   const { company } = getTenant();
-  return `${shared()}${memory}
+  return `${shared()}
+
+${resourcesBlock("chat", company.shortName)}${memory}
 
 FORMAT IM CHAT
 - Höchstens 130 Wörter. Ohne Überschriften und ohne Markdown-Fettdruck. Aufzählungen nur mit „• “ am Zeilenanfang.
-- Telefonnummern vollständig ausschreiben.
+- Telefonnummern vollständig ausschreiben. Links als nackte Adresse (https://…), ohne Markdown-Klammern.
 - Wenn ein Rückruf jetzt der sinnvolle nächste Schritt ist oder die Person Kontakt möchte, schreib ganz am Ende in eine eigene Zeile genau: ${CALLBACK_MARKER}
   Die App zeigt dann ein Formular mit Einwilligung. Frag im Chat selbst nicht nach Name oder Telefonnummer.
 
@@ -86,6 +90,8 @@ export function voiceInstructions(lang: Lang, memory = ""): string {
         ? `"Hello! I'm the AI care advisor of ${company.shortName}. How can I help?"`
         : `„Guten Tag! Ich bin der KI-Pflegeberater von ${company.shortName}. Wie kann ich helfen?“`;
   return `${shared()}
+
+${resourcesBlock("voice", company.shortName)}
 
 TELEFONGESPRÄCH – BEGINN
 - Hat die Person noch nichts gesagt, begrüße sie kurz auf ${uiLang}, z. B. ${greet} Ein Satz, dann zuhören.
@@ -138,6 +144,15 @@ export function crmTools(nonBlocking: boolean) {
       name: "end_call",
       description: "Beendet den Anruf. Nur nach eindeutigem Abschied der Person und nachdem du dich selbst verabschiedet hast.",
       parametersJsonSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "show_link",
+      description: "Zeigt der Person einen offiziellen Link (Formular, Ratgeber, Beratungsstelle) auf dem Bildschirm und speichert ihn im Chatverlauf. Nur ids aus der Liste OFFIZIELLE STELLEN.",
+      parametersJsonSchema: {
+        type: "object",
+        properties: { id: { type: "string", enum: RESOURCE_IDS } },
+        required: ["id"],
+      },
     },
     {
       name: "record_consent",

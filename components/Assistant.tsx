@@ -7,6 +7,7 @@ import type { Company } from "@/lib/tenant";
 import LeadForm from "./LeadForm";
 import { addCaptureWorklet, rms, toBase64 } from "@/lib/pcm";
 import { conversationId, forgetDevice, loadHistory, saveHistory } from "@/lib/device";
+import { LINK_HOSTS } from "@/lib/resources";
 
 const CallOverlay = dynamic(() => import("./CallOverlay"), { ssr: false });
 
@@ -25,6 +26,31 @@ function visible(text: string) {
   const open = s.lastIndexOf("[[");
   if (open !== -1 && !s.slice(open).includes("]]") && MARKER.startsWith(s.slice(open))) s = s.slice(0, open);
   return s.trim();
+}
+
+// Links nur zu geprüften offiziellen Seiten und zur Firmenseite klickbar machen; Telefonnummern zum Anrufen.
+const URL_RE = /(https?:\/\/[^\s<>"')\]]+[^\s<>"')\].,;:!?])|((?:\+49|0)\d[\d\s/-]{6,}\d)/g;
+function linkify(text: string, extraHosts: string[] = []): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  let last = 0;
+  let k = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    const i = m.index ?? 0;
+    if (i > last) out.push(text.slice(last, i));
+    if (m[1]) {
+      let ok = false;
+      try {
+        const host = new URL(m[1]).hostname.replace(/^www\./, "");
+        ok = [...LINK_HOSTS, ...extraHosts].some((h) => host === h || host.endsWith("." + h));
+      } catch {}
+      out.push(ok ? <a key={k++} href={m[1]} target="_blank" rel="noopener noreferrer">{m[1].replace(/^https?:\/\/(www\.)?/, "")}</a> : m[1]);
+    } else {
+      out.push(<a key={k++} href={`tel:${m[2].replace(/[^\d+]/g, "")}`}>{m[2]}</a>);
+    }
+    last = i + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }
 
 export default function Assistant({
@@ -58,6 +84,7 @@ export default function Assistant({
   const chunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const t = T[lang];
+  const companyHost = (() => { try { return new URL(company.website).hostname.replace(/^www\./, ""); } catch { return ""; } })();
 
   // Gedächtnis dieses Geräts: Verlauf + Verbindung zur eigenen Anfrage
   useEffect(() => {
@@ -533,7 +560,7 @@ export default function Assistant({
                 {slow && <p className="slow-note">{t.slow}</p>}
               </>
             ) : (
-              <p>{m.role === "assistant" ? visible(m.content) : m.content}</p>
+              <p>{m.role === "assistant" ? linkify(visible(m.content), [companyHost]) : m.content}</p>
             )}
             {m.role === "assistant" && m.final && !m.error && !m.call && (
               <button
