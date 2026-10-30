@@ -6,7 +6,8 @@ import { BCP47, LANGS, T, detectLang, type Lang } from "@/lib/i18n";
 import type { Company } from "@/lib/tenant";
 import LeadForm from "./LeadForm";
 import { addCaptureWorklet, rms, toBase64 } from "@/lib/pcm";
-import { conversationId, forgetDevice, loadHistory, saveHistory } from "@/lib/device";
+import { conversationId, deleteSession, devMode, listSessions, loadHistory, newSession, resetDevice, saveHistory, switchSession, type Session } from "@/lib/device";
+import { Choices, DocCard, TimePicker, parseBlocks, plainText } from "./ChatBlocks";
 import { LINK_HOSTS } from "@/lib/resources";
 
 const CallOverlay = dynamic(() => import("./CallOverlay"), { ssr: false });
@@ -21,7 +22,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 
 function visible(text: string) {
   // Markdown-Reste (z. B. **fett**) entfernen – die Antwort wird als einfacher Text gezeigt
-  let s = text.replaceAll(MARKER, "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, "");
+  let s = plainText(text).replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, "");
   // während des Streamens ein angefangenes „[[…“ am Ende verstecken
   const open = s.lastIndexOf("[[");
   if (open !== -1 && !s.slice(open).includes("]]") && MARKER.startsWith(s.slice(open))) s = s.slice(0, open);
@@ -74,6 +75,8 @@ export default function Assistant({
   const [speaking, setSpeaking] = useState<{ id: string; phase: "loading" | "playing" } | null>(null);
   const audioCache = useRef<Map<string, string>>(new Map());
   const [conv, setConv] = useState("");
+  const [dev, setDev] = useState(false);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [myLead, setMyLead] = useState<MyLead | null>(null);
   const [openLead, setOpenLead] = useState<string | null>(null);
   const [slow, setSlow] = useState(false);
@@ -90,14 +93,20 @@ export default function Assistant({
   useEffect(() => {
     const id = conversationId();
     setConv(id);
-    const past = loadHistory();
+    const past = loadHistory(id);
     if (past.length) setMsgs(past.map((m) => ({ ...m, final: true })));
     refreshLead(id);
+    const isDev = devMode();
+    setDev(isDev);
+    if (isDev) setSessions(listSessions());
   }, []);
 
   useEffect(() => {
-    if (!busy) saveHistory(msgs.filter((m) => !m.error && m.content).map(({ id, role, content, call, at }) => ({ id, role, content, call, at })));
-  }, [msgs, busy]);
+    if (!busy && conv) {
+      saveHistory(msgs.filter((m) => !m.error && m.content).map(({ id, role, content, call, at }) => ({ id, role, content, call, at })), conv);
+      if (dev) setSessions(listSessions());
+    }
+  }, [msgs, busy, conv, dev]);
 
   async function refreshLead(id = conv) {
     if (!id) return;
@@ -108,13 +117,26 @@ export default function Assistant({
     } catch {}
   }
 
-  function newConversation() {
-    if (!window.confirm(t.newChatConfirm)) return;
+  // ---------- Sitzungen (Entwicklermodus) ----------
+  function openSession(id: string) {
     stopSpeaking();
-    forgetDevice();
-    setMsgs([]);
+    setConv(id);
+    setMsgs(loadHistory(id).map((m) => ({ ...m, final: true })));
     setMyLead(null);
-    setConv(conversationId());
+    refreshLead(id);
+    setSessions(listSessions());
+  }
+  const devNew = () => openSession(newSession());
+  const devSwitch = (id: string) => openSession(switchSession(id));
+  function devDelete() {
+    if (!window.confirm("Diese Sitzung auf dem Gerät löschen? (CRM bleibt)")) return;
+    deleteSession(conv);
+    openSession(conversationId());
+  }
+  function devReset() {
+    if (!window.confirm("Alle Sitzungen und den Verlauf auf diesem Gerät löschen?")) return;
+    resetDevice();
+    openSession(conversationId());
   }
 
   useEffect(() => {
@@ -480,38 +502,47 @@ export default function Assistant({
   }
 
   const started = msgs.length > 0;
+  const lastAssistantId = [...msgs].reverse().find((m) => m.role === "assistant")?.id;
   const chatReady = cfg?.chat ?? true;
 
   return (
     <div className={`app${embedded ? " is-embedded" : ""}`}>
-      {demo.show && <div className="demo-strip">{t.demo(demo.author, company.shortName)}</div>}
-
       <header className="top">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true">{company.shortName.slice(0, 1)}</span>
-          <div>
-            <p className="brand-name">
-              <span className="long">{company.name}</span>
-              <span className="short">{company.shortName}</span>
-            </p>
-            <p className="brand-tag">{company.tagline[lang]}</p>
-          </div>
+        <div className="lang" role="group" aria-label="Sprache / Язык">
+          {LANGS.map((l) => (
+            <button key={l} aria-pressed={lang === l} onClick={() => setLang(l)}>
+              {l.toUpperCase()}
+            </button>
+          ))}
         </div>
         <div className="top-actions">
-          <div className="lang" role="group" aria-label="Sprache / Язык">
-            {LANGS.map((l) => (
-              <button key={l} aria-pressed={lang === l} onClick={() => setLang(l)}>
-                {l.toUpperCase()}
-              </button>
-            ))}
-          </div>
-          <button className="icon-btn" onClick={() => setContactOpen(true)} aria-label={t.contact}>
-            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.3.2 2.5.57 3.6a1 1 0 0 1-.25 1z"/></svg>
+          <button className="icon-btn small" onClick={() => setContactOpen(true)} aria-label={t.contact} title={t.contact}>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
           </button>
+          {cfg?.voiceCall && (
+            <button className="call-btn" onClick={() => setCallOpen(true)} aria-label={t.callTitle} title={t.callTitle}>
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.3.2 2.5.57 3.6a1 1 0 0 1-.25 1z"/></svg>
+            </button>
+          )}
         </div>
       </header>
 
       <main className="thread" ref={threadRef} aria-live="polite">
+        {dev && (
+          <div className="devbar">
+            <select value={conv} onChange={(e) => devSwitch(e.target.value)} aria-label="Sitzung">
+              {sessions.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {new Date(x.updated).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · {x.title || "(leer)"}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={devNew} title="Neue Sitzung">＋</button>
+            <button type="button" onClick={devDelete} title="Sitzung löschen">🗑</button>
+            <button type="button" onClick={devReset} title="Alles zurücksetzen">⟲</button>
+            <code title={conv}>{conv.slice(0, 8)}{myLead ? ` · #${myLead.id}` : ""}</code>
+          </div>
+        )}
         <section className="intro">
           <p className="hello">{myLead?.name ? t.welcomeBack(myLead.name) : t.hello(company.shortName)}</p>
 
@@ -522,18 +553,6 @@ export default function Assistant({
                 {myLead.phone ? <> · {myLead.phone}</> : null}
               </span>
             </div>
-          )}
-
-          {cfg?.voiceCall && (
-            <button className="call-cta" onClick={() => setCallOpen(true)}>
-              <span className="call-disc" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="32" height="32"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.3.2 2.5.57 3.6a1 1 0 0 1-.25 1z"/></svg>
-              </span>
-              <span className="call-words">
-                <strong>{t.callTitle}</strong>
-                <span>{t.callSub}</span>
-              </span>
-            </button>
           )}
 
           {!started && chatReady && (
@@ -559,8 +578,26 @@ export default function Assistant({
                 <span className="typing" aria-label={t.thinking}><i /><i /><i /></span>
                 {slow && <p className="slow-note">{t.slow}</p>}
               </>
+            ) : m.role === "user" ? (
+              <p>{m.content}</p>
             ) : (
-              <p>{m.role === "assistant" ? linkify(visible(m.content), [companyHost]) : m.content}</p>
+              parseBlocks(m.content).map((b, bi) => {
+                const isLast = m.id === lastAssistantId && !busy;
+                if (b.kind === "text") return <p key={bi}>{linkify(b.text.replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, ""), [companyHost])}</p>;
+                if (b.kind === "doc") return <DocCard key={bi} id={b.id} lang={lang} />;
+                if (b.kind === "choices") return m.final ? <Choices key={bi} options={b.options} disabled={!isLast} onPick={(v) => send(v)} /> : null;
+                if (b.kind === "time") return m.final && isLast ? <TimePicker key={bi} lang={lang} onPick={(v) => send(v)} /> : null;
+                if (b.kind === "lead" && m.final && !m.error)
+                  return openLead === m.id ? (
+                    <LeadForm key={bi} lang={lang} conversationId={conv} initial={myLead} onDone={() => refreshLead()} />
+                  ) : (
+                    <button key={bi} className="lead-open" onClick={() => setOpenLead(m.id)}>
+                      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.3.2 2.5.57 3.6a1 1 0 0 1-.25 1z"/></svg>
+                      {myLead ? t.leadChange : t.leadOpen}
+                    </button>
+                  );
+                return null;
+              })
             )}
             {m.role === "assistant" && m.final && !m.error && !m.call && (
               <button
@@ -570,21 +607,12 @@ export default function Assistant({
                 title={speaking?.id === m.id ? t.stopReading : t.readAloud}
               >
                 {speaking?.id === m.id && speaking.phase === "playing" ? (
-                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
                 ) : (
-                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z"/></svg>
+                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z"/></svg>
                 )}
               </button>
             )}
-            {m.lead &&
-              (openLead === m.id ? (
-                <LeadForm lang={lang} conversationId={conv} initial={myLead} onDone={() => refreshLead()} />
-              ) : (
-                <button className="lead-open" onClick={() => setOpenLead(m.id)}>
-                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.3.2 2.5.57 3.6a1 1 0 0 1-.25 1z"/></svg>
-                  {myLead ? t.leadChange : t.leadOpen}
-                </button>
-              ))}
           </div>
         ))}
       </main>
@@ -598,47 +626,46 @@ export default function Assistant({
             send(input);
           }}
         >
-          <button
-            type="button"
-            className={`mic mic-${mic}`}
-            onClick={micPress}
-            aria-label={mic === "recording" || mic === "live" ? t.micStop : t.micHold}
-            title={mic === "recording" || mic === "live" ? t.micStop : t.micHold}
-            disabled={!chatReady}
-          >
-            {mic === "recording" || mic === "live" ? (
-              <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
+          <div className={`field${mic === "recording" || mic === "live" ? " is-listening" : ""}`}>
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send(input);
+                }
+              }}
+              placeholder={mic === "live" || mic === "recording" ? t.micStop : t.placeholder}
+              aria-label={t.placeholder}
+              maxLength={2000}
+              disabled={!chatReady}
+              enterKeyHint="send"
+            />
+            {input.trim() && mic === "idle" ? (
+              <button className="send" type="submit" disabled={busy} aria-label={t.send}>
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3.39 10.1 15 12 3.39 13.9z"/></svg>
+              </button>
             ) : (
-              <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12z"/></svg>
+              <button
+                type="button"
+                className={`mic mic-${mic}`}
+                onClick={micPress}
+                aria-label={mic === "recording" || mic === "live" ? t.micStop : t.micHold}
+                title={mic === "recording" || mic === "live" ? t.micStop : t.micHold}
+                disabled={!chatReady}
+              >
+                {mic === "recording" || mic === "live" ? (
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12z"/></svg>
+                )}
+              </button>
             )}
-          </button>
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send(input);
-              }
-            }}
-            placeholder={t.placeholder}
-            aria-label={t.placeholder}
-            maxLength={2000}
-            disabled={!chatReady}
-            enterKeyHint="send"
-          />
-          <button className="send" type="submit" disabled={busy || !input.trim()} aria-label={t.send}>
-            <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3.39 10.1 15 12 3.39 13.9z"/></svg>
-          </button>
+          </div>
         </form>
-        <div className="foot">
-          <span className="ai-note">{t.aiNote}</span>
-          {msgs.length > 0 && (
-            <button type="button" className="new-chat" onClick={newConversation}>{t.newChat}</button>
-          )}
-        </div>
       </footer>
 
       {contactOpen && (

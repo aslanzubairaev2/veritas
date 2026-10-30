@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { T, type Lang } from "@/lib/i18n";
+import { TimePicker } from "./ChatBlocks";
 
 export default function LeadForm({
   lang,
@@ -17,6 +18,7 @@ export default function LeadForm({
   const t = T[lang];
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState("");
+  const [when, setWhen] = useState("");
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -36,6 +38,7 @@ export default function LeadForm({
           language: lang,
           source: "chat",
           conversationId,
+          preferredTime: when,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -62,6 +65,17 @@ export default function LeadForm({
         <span>{t.leadPhone}</span>
         <input name="phone" required type="tel" inputMode="tel" maxLength={40} autoComplete="tel" defaultValue={initial?.phone ?? ""} />
       </label>
+      <div className="lead-time">
+        <span>{t.leadWhen}</span>
+        {when ? (
+          <p className="picked-note">
+            ✓ {when}{" "}
+            <button type="button" className="linklike" onClick={() => setWhen("")}>{t.change}</button>
+          </p>
+        ) : (
+          <TimePicker compact lang={lang} onPick={setWhen} />
+        )}
+      </div>
       <label>
         <span>{t.leadDistrict}</span>
         <input name="district" maxLength={80} autoComplete="address-level2" defaultValue={initial?.district ?? ""} />

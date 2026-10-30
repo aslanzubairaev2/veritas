@@ -15,6 +15,9 @@ export type Resource = {
   urls?: Partial<Record<Lang, string>>;
   phone?: string;
   hours?: string;
+  /** Direkt herunterladbares PDF (Formular, Vorlage, Merkblatt), ggf. je Sprache */
+  file?: string;
+  files?: Partial<Record<Lang, string>>;
 };
 
 export const RESOURCES: Resource[] = [
@@ -38,6 +41,7 @@ export const RESOURCES: Resource[] = [
     title: { de: "Muster-Antrag Pflegeversicherung (betanet)", ru: "Образец заявления в Pflegekasse (betanet)", en: "Sample application form (betanet)" },
     use: "Muster-Antrag auf Leistungen der Pflegeversicherung zum Ausdrucken oder Ausfüllen, dazu Fristen und Ablauf. Jede Pflegekasse hat aber ein eigenes Formular, das sie nach dem ersten Anruf zuschickt.",
     url: "https://www.betanet.de/pflegeantrag-und-pflegebegutachtung.html",
+    file: "https://www.betanet.de/files/pdf/muster-antrag-pflege-ausfuellbar.pdf",
   },
   {
     id: "antrag_ausfuellen",
@@ -50,6 +54,11 @@ export const RESOURCES: Resource[] = [
     title: { de: "Informationen zur Pflegebegutachtung (Medizinischer Dienst)", ru: "Памятка о визите Medizinischer Dienst (MD)", en: "Information on the care assessment (Medical Service)" },
     use: "Offizielles Merkblatt des Medizinischen Dienstes (PDF): Ablauf der Begutachtung und Checkliste zur Vorbereitung. Russische und englische Fassung siehe RU/EN-Link.",
     url: "https://medizinischerdienst.de/fileadmin/MD-zentraler-Ordner/Downloads/01_Pflegebegutachtung/250203_DEU_01_BF.pdf",
+    file: "https://medizinischerdienst.de/fileadmin/MD-zentraler-Ordner/Downloads/01_Pflegebegutachtung/250203_DEU_01_BF.pdf",
+    files: {
+      ru: "https://medizinischerdienst.de/fileadmin/MD-zentraler-Ordner/Downloads/01_Pflegebegutachtung/250203_RUS_01_BF.pdf",
+      en: "https://medizinischerdienst.de/fileadmin/MD-zentraler-Ordner/Downloads/01_Pflegebegutachtung/250203_ENG_01_BF.pdf",
+    },
     urls: {
       ru: "https://medizinischerdienst.de/fileadmin/MD-zentraler-Ordner/Downloads/01_Pflegebegutachtung/250203_RUS_01_BF.pdf",
       en: "https://medizinischerdienst.de/fileadmin/MD-zentraler-Ordner/Downloads/01_Pflegebegutachtung/250203_ENG_01_BF.pdf",
@@ -67,6 +76,7 @@ export const RESOURCES: Resource[] = [
     title: { de: "Pflegetagebuch – Vorlage zum Ausdrucken (betanet)", ru: "Дневник ухода – бланк для печати (betanet)", en: "Care diary – printable template (betanet)" },
     use: "Kostenlose PDF-Vorlage für das Pflegetagebuch zur Vorbereitung auf die Begutachtung oder für einen Widerspruch.",
     url: "https://www.betanet.de/pflegetagebuch.html",
+    file: "https://www.betanet.de/files/pdf/pflege-tagebuch.pdf",
   },
   {
     id: "widerspruch",
@@ -117,6 +127,11 @@ export function resourceUrl(r: Resource, lang: Lang) {
   return r.urls?.[lang] ?? r.url;
 }
 
+/** PDF zum Herunterladen in der passenden Sprache (falls vorhanden) */
+export function resourceFile(r: Resource, lang: Lang) {
+  return r.files?.[lang] ?? r.file;
+}
+
 /** Hosts, deren Links im Chat klickbar werden (alles andere bleibt Text). */
 export const LINK_HOSTS = Array.from(
   new Set(
@@ -128,11 +143,11 @@ export const LINK_HOSTS = Array.from(
 export function resourcesBlock(mode: "chat" | "voice", company: string): string {
   const lines = RESOURCES.map((r) => {
     const urls = [r.url, ...Object.entries(r.urls ?? {}).map(([l, u]) => `${l.toUpperCase()}: ${u}`)];
-    return `- [${r.id}] ${r.title.de}${r.phone ? ` – Tel. ${r.phone}${r.hours ? ` (${r.hours})` : ""}` : ""}. ${r.use}${mode === "chat" ? ` Link: ${urls.join(" | ")}` : ""}`;
+    return `- [${r.id}]${r.file ? " (PDF zum Herunterladen)" : ""} ${r.title.de}${r.phone ? ` – Tel. ${r.phone}${r.hours ? ` (${r.hours})` : ""}` : ""}. ${r.use}${mode === "chat" ? ` Link: ${urls.join(" | ")}` : ""}`;
   });
   const how =
     mode === "chat"
-      ? "- Passt eine Stelle zur Frage, nenne sie mit Telefonnummer und/oder Link (die Adresse genau so, wie sie hier steht; bei russisch-/englischsprachigen Personen die RU-/EN-Version, falls vorhanden). Höchstens zwei Links pro Antwort. Erfinde NIE Links oder Nummern, die hier nicht stehen."
+      ? "- Passt eine Stelle zur Frage, füge an der passenden Stelle eine eigene Zeile [[DOC:id]] ein (id aus der Liste). Die App zeigt daraus eine Karte mit Titel, Telefonnummer, Link und – falls vorhanden – Knopf „PDF herunterladen“, automatisch in der Sprache der Person. Schreib die Adresse dann NICHT zusätzlich aus. Höchstens zwei Karten pro Antwort. Erfinde NIE ids, Links oder Nummern."
       : "- Passt eine Stelle zur Frage, nenne sie kurz und sag die Telefonnummer, falls vorhanden. Links liest du nicht vor: rufe show_link mit der id auf – die Person sieht den Link dann auf dem Bildschirm und später im Chatverlauf. Sag dazu kurz „Ссылку я показала на экране“ / „Den Link sehen Sie jetzt auf dem Bildschirm“. Erfinde NIE Links oder Nummern.";
   return `OFFIZIELLE STELLEN, FORMULARE UND RATGEBER (unabhängig von ${company})
 - Ordne Links genau zu: Jeder Link gehört nur zu dem Eintrag, unter dem er steht. Behaupte nie, ein Link sei z. B. „auf Russisch“, wenn kein RU-Link dabeisteht.

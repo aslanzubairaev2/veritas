@@ -10,6 +10,7 @@ export type Lead = {
   language?: string;
   source: "chat" | "call";
   conversationId?: string;
+  preferredTime?: string;
 };
 
 const clip = (s: unknown, n: number) => (typeof s === "string" ? s.trim().slice(0, n) : "");
@@ -26,6 +27,7 @@ export function validateLead(input: Record<string, unknown>, source: Lead["sourc
     concern: clip(input.concern, 400) || undefined,
     language: clip(input.language, 10) || undefined,
     source,
+    preferredTime: clip(input.preferredTime, 60) || undefined,
     conversationId: /^[\w-]{8,64}$/.test(String(input.conversationId ?? "")) ? String(input.conversationId) : undefined,
   };
 }
@@ -49,7 +51,7 @@ export async function deliverLead(lead: Lead): Promise<string[]> {
         consent: true,
       });
       const changed = before?.phone && before.phone !== lead.phone ? ` (neue Nummer, vorher ${before.phone})` : before?.name && before.name !== lead.name ? " (Name geändert)" : "";
-      await addTask(conv, lead.source, before?.phone ? `Kontaktdaten aktualisiert – Rückruf${changed}` : "Rückruf vereinbaren", "Bürozeiten");
+      await addTask(conv, lead.source, before?.phone ? `Kontaktdaten aktualisiert – Rückruf${changed}` : "Rückruf vereinbaren", lead.preferredTime || "Bürozeiten");
       delivered.push("crm");
     } catch (e) {
       console.error("CRM lead failed", e instanceof Error ? e.message.slice(0, 200) : e);
@@ -63,6 +65,7 @@ export async function deliverLead(lead: Lead): Promise<string[]> {
       `Telefon: ${lead.phone}`,
       lead.district ? `Bezirk: ${lead.district}` : "",
       lead.concern ? `Anliegen: ${lead.concern}` : "",
+      lead.preferredTime ? `Wunschzeit: ${lead.preferredTime}` : "",
       lead.language ? `Sprache: ${lead.language}` : "",
     ]
       .filter(Boolean)

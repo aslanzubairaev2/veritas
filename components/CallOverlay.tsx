@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { T, type Lang } from "@/lib/i18n";
 import { addCaptureWorklet, toBase64 } from "@/lib/pcm";
-import { RESOURCES, resourceUrl, type Resource } from "@/lib/resources";
+import { RESOURCES, resourceFile, resourceUrl, type Resource } from "@/lib/resources";
+import { TimePicker } from "./ChatBlocks";
 
 type Line = { who: "user" | "bot"; text: string; id: number };
 type Phase = "connecting" | "listening" | "speaking" | "ended" | "error";
@@ -148,6 +149,23 @@ export default function CallOverlay({
   const asyncRef = useRef(false);
   const consentRef = useRef(false);
   const [links, setLinks] = useState<Resource[]>([]);
+  // Eintippen statt Sprechen (Namen, Nummern, Zeit) – vom Assistenten angefragt oder selbst geöffnet
+  const [ask, setAsk] = useState<{ kind: "name" | "phone" | "time" | "text"; label: string } | null>(null);
+  const [typed, setTyped] = useState("");
+
+  function submitTyped(value: string, kind: "name" | "phone" | "time" | "text") {
+    const v = value.trim().slice(0, 200);
+    if (!v) return;
+    const what = kind === "name" ? "Name" : kind === "phone" ? "Telefonnummer" : kind === "time" ? "Wunschzeit für den Rückruf" : "Nachricht";
+    try {
+      sessionRef.current?.sendRealtimeInput({ text: `(Die Person hat eingetippt – ${what}: ${v})` });
+    } catch {}
+    transcriptRef.current.push({ role: "user", content: v });
+    curRef.current.user = null;
+    setLines((prev) => [...prev, { id: ++lineIdRef.current, who: "user" as Line["who"], text: `⌨ ${v}` }].slice(-8));
+    setAsk(null);
+    setTyped("");
+  }
   const userSpokeRef = useRef(false);
   const [actions, setActions] = useState<{ id: number; text: string; ok: boolean }[]>([]);
   const actionId = useRef(0);
@@ -172,6 +190,15 @@ export default function CallOverlay({
           }
           try {
             sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: r ? { ok: true, shown: r.title.de } : { ok: false, error: "unknown_id" } }] });
+          } catch {}
+          return;
+        }
+        if (call.name === "ask_input") {
+          const kind = (["name", "phone", "time", "text"].includes(String(args.kind)) ? args.kind : "text") as "name" | "phone" | "time" | "text";
+          setTyped("");
+          setAsk({ kind, label: String(args.label ?? "").slice(0, 120) });
+          try {
+            sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: { ok: true, shown: true } }] });
           } catch {}
           return;
         }
@@ -487,6 +514,9 @@ export default function CallOverlay({
               <a href={resourceUrl(r, lang)} target="_blank" rel="noopener noreferrer">
                 <span aria-hidden="true">🔗</span> {r.title[lang]}
               </a>
+              {resourceFile(r, lang) && (
+                <a className="call-link-phone" href={resourceFile(r, lang)} target="_blank" rel="noopener noreferrer" download>PDF ↓</a>
+              )}
               {r.phone && <a className="call-link-phone" href={`tel:${r.phone.replace(/[^\d+]/g, "")}`}>{r.phone}</a>}
             </li>
           ))}
@@ -498,6 +528,35 @@ export default function CallOverlay({
         ))}
       </div>
 
+      {ask && phase !== "ended" && phase !== "error" && (
+        <form
+          className="call-type"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitTyped(typed, ask.kind);
+          }}
+        >
+          {ask.label && <p>{ask.label}</p>}
+          {ask.kind === "time" ? (
+            <TimePicker compact lang={lang} onPick={(v) => submitTyped(v, "time")} />
+          ) : (
+            <div className="call-type-row">
+              <input
+                autoFocus
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                type={ask.kind === "phone" ? "tel" : "text"}
+                inputMode={ask.kind === "phone" ? "tel" : "text"}
+                autoComplete={ask.kind === "name" ? "name" : ask.kind === "phone" ? "tel" : "off"}
+                maxLength={200}
+                aria-label={ask.label || t.typeIt}
+              />
+              <button className="btn btn-light" disabled={!typed.trim()}>{t.typeSend}</button>
+            </div>
+          )}
+          <button type="button" className="linklike light" onClick={() => setAsk(null)}>{t.close}</button>
+        </form>
+      )}
       <div className="call-actions">
         {phase === "ended" || phase === "error" ? (
           <>
@@ -505,13 +564,19 @@ export default function CallOverlay({
             <a className="btn btn-ghost-light" href={`tel:${phoneHref}`}>{t.callUs}: {phone}</a>
           </>
         ) : (
+          <>
+          {!ask && (
+            <button type="button" className="call-kbd" onClick={() => setAsk({ kind: "text", label: "" })} aria-label={t.typeIt} title={t.typeIt}>
+              <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M20 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg>
+            </button>
+          )}
           <button className="hangup" onClick={close} aria-label={t.callEnd}>
             <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path fill="currentColor" d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.996.996 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.27 11.27 0 0 0-2.67-1.85.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
             <span>{t.callEnd}</span>
           </button>
+          </>
         )}
       </div>
-      <p className="call-note">{t.aiNote}</p>
     </div>
   );
 }

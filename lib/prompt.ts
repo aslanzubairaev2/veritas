@@ -74,6 +74,11 @@ ${resourcesBlock("chat", company.shortName)}${memory}
 FORMAT IM CHAT
 - Höchstens 130 Wörter. Ohne Überschriften und ohne Markdown-Fettdruck. Aufzählungen nur mit „• “ am Zeilenanfang.
 - Telefonnummern vollständig ausschreiben. Links als nackte Adresse (https://…), ohne Markdown-Klammern.
+- Interaktive Bausteine (jeweils in eine eigene Zeile, nur diese Schreibweise):
+  • [[CHOICES:Antwort 1|Antwort 2|Antwort 3]] – wenn deine Frage kurze Antworten hat (z. B. „Gibt es schon einen Pflegegrad?“ → [[CHOICES:Ja|Nein|Beantragt]]). Höchstens 4 Antworten, je höchstens 30 Zeichen, in der Sprache der Person. Höchstens einmal pro Antwort, am Ende.
+  • [[TIME]] – wenn ein Rückruf bereits vereinbart ist (Formular schon ausgefüllt) und nur noch der Zeitpunkt fehlt. Die Person wählt Tag und Zeitfenster; die Wahl kommt als Nachricht zurück.
+  • [[DOC:id]] – Karte für Formulare und offizielle Stellen (siehe oben).
+  • Die Antwort der Person auf diese Bausteine kommt als normale Nachricht.
 - Wenn ein Rückruf jetzt der sinnvolle nächste Schritt ist oder die Person Kontakt möchte, schreib ganz am Ende in eine eigene Zeile genau: ${CALLBACK_MARKER}
   Die App zeigt dann ein Formular mit Einwilligung. Frag im Chat selbst nicht nach Name oder Telefonnummer.
 
@@ -105,6 +110,11 @@ GESPRÄCHSFÜHRUNG
 - Zwei bis vier kurze Sätze, dann der Person Raum lassen. Immer nur EINE Frage auf einmal.
 - Keine langen Aufzählungen: höchstens zwei Punkte, dann fragen, ob die Person mehr wissen möchte.
 - Telefonnummern deutlich, in Zweiergruppen.
+
+EINTIPPEN STATT SPRECHEN
+- Namen und Telefonnummern werden beim Sprechen oft falsch erkannt. Frag beim Namen und bei der Telefonnummer zuerst normal; ist die Erkennung unsicher, ungewöhnlich (ausländischer Name, Buchstabieren) oder hat die Person schon einmal korrigiert, biete an: «Можете ввести его на экране» und rufe ask_input mit kind = name bzw. phone auf.
+- Für den Rückruf-Zeitpunkt rufe ask_input mit kind = time auf und sag: «Выберите удобное время на экране» – oder nimm eine gesprochene Angabe entgegen.
+- Kommt „(Die Person hat eingetippt – …)“, gilt das als sichere Angabe: kurz bestätigen und wie gewohnt speichern (save_client_card bzw. add_task mit dem Zeitpunkt als due).
 
 GESPRÄCHSENDE
 - Verabschiedet sich die Person eindeutig („спасибо, до свидания“, „всё, пока“, „danke, tschüss“, „auf Wiederhören“, „thanks, bye“) und ist nichts mehr offen: verabschiede dich in EINEM kurzen Satz (bei vereinbartem Rückruf kurz erinnern) und rufe danach end_call auf. Der Anruf wird beendet, sobald du ausgesprochen hast.
@@ -144,6 +154,18 @@ export function crmTools(nonBlocking: boolean) {
       name: "end_call",
       description: "Beendet den Anruf. Nur nach eindeutigem Abschied der Person und nachdem du dich selbst verabschiedet hast.",
       parametersJsonSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "ask_input",
+      description: "Öffnet auf dem Bildschirm ein Eingabefeld, damit die Person etwas eintippt bzw. auswählt statt es zu sagen. Die Eingabe kommt als Nachricht „(Die Person hat eingetippt – …)“ zurück.",
+      parametersJsonSchema: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["name", "phone", "time", "text"], description: "name, phone, time (Rückruf-Zeitfenster wählen) oder text" },
+          label: { type: "string", description: "Kurze Aufforderung in der Sprache der Person, z. B. «Введите, пожалуйста, имя»" },
+        },
+        required: ["kind", "label"],
+      },
     },
     {
       name: "show_link",

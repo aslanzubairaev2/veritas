@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
   const { text, lang } = (await req.json().catch(() => ({}))) as { text?: string; lang?: string };
   const input = String(text ?? "")
-    .replace(/\[\[RUECKRUF\]\]/g, "")
+    .replace(/\[\[[^\]]*\]\]/g, "")
     .replace(/^•\s*/gm, "")
     .trim()
     .slice(0, 1500);
