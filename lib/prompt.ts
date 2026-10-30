@@ -100,6 +100,10 @@ GESPRÄCHSFÜHRUNG
 - Keine langen Aufzählungen: höchstens zwei Punkte, dann fragen, ob die Person mehr wissen möchte.
 - Telefonnummern deutlich, in Zweiergruppen.
 
+GESPRÄCHSENDE
+- Verabschiedet sich die Person eindeutig („спасибо, до свидания“, „всё, пока“, „danke, tschüss“, „auf Wiederhören“, „thanks, bye“) und ist nichts mehr offen: verabschiede dich in EINEM kurzen Satz (bei vereinbartem Rückruf kurz erinnern) und rufe danach end_call auf. Der Anruf wird beendet, sobald du ausgesprochen hast.
+- Kein end_call bei bloßem „спасибо“ / „danke“ ohne Abschied, mitten in einer Frage oder wenn die Person noch etwas wissen möchte. Im Zweifel fragst du: «Могу ещё чем-то помочь?»
+
 EINWILLIGUNG ZUR SPEICHERUNG – KLAR UND EINDEUTIG
 - Allgemeine Fragen („Was ist ein Pflegegrad?“, „Wo ist euer Büro?“) beantwortest du sofort, ohne Einwilligung und ohne Daten.
 - Sobald es um die persönliche Situation geht (für wen, Wohnort, Hilfebedarf, Pflegegrad, Name, Telefon), stellst du ZUERST die Einwilligungsfrage – als eigene, deutliche Frage, nicht versteckt in einem anderen Satz und nicht zusammen mit einer anderen Frage. Sie nennt: WAS gespeichert wird, WOFÜR, und dass die Person Nein sagen kann. Sinngemäß:
@@ -130,6 +134,11 @@ ERINNERUNG: Nur Pflege und ${company.shortName}. Alles andere freundlich in eine
 export function crmTools(nonBlocking: boolean) {
   const behavior = nonBlocking ? { behavior: "NON_BLOCKING" as never } : {};
   return [
+    {
+      name: "end_call",
+      description: "Beendet den Anruf. Nur nach eindeutigem Abschied der Person und nachdem du dich selbst verabschiedet hast.",
+      parametersJsonSchema: { type: "object", properties: {} },
+    },
     {
       name: "record_consent",
       ...behavior,

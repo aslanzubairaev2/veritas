@@ -54,6 +54,26 @@ export default function CallOverlay({
   const curRef = useRef<{ user: number | null; bot: number | null }>({ user: null, bot: null });
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
+  // Auflegen nach dem Abschied: erst, wenn der Assistent zu Ende gesprochen hat
+  const lastAudioRef = useRef(0);
+  const endingRef = useRef(false);
+  function endAfterGoodbye() {
+    if (endingRef.current || endedRef.current) return;
+    endingRef.current = true;
+    const since = Date.now();
+    const check = setInterval(() => {
+      if (endedRef.current) return clearInterval(check);
+      const now = Date.now();
+      const quiet = sourcesRef.current.size === 0 && now - lastAudioRef.current > 1200;
+      // Abschied schon gesprochen (Audio nach der Bitte) und fertig – oder gar kein Audio mehr nach 4 s
+      const spokeAfter = lastAudioRef.current > since;
+      if ((quiet && (spokeAfter || now - since > 4000)) || now - since > 12_000) {
+        clearInterval(check);
+        hangup();
+      }
+    }, 250);
+  }
+
   function hangup() {
     if (endedRef.current) return;
     endedRef.current = true;
@@ -90,6 +110,7 @@ export default function CallOverlay({
     const start = Math.max(ctx.currentTime + 0.03, playheadRef.current);
     src.start(start);
     playheadRef.current = start + buf.duration;
+    lastAudioRef.current = Date.now();
     sourcesRef.current.add(src);
     setPhase("speaking");
     src.onended = () => {
@@ -139,6 +160,11 @@ export default function CallOverlay({
     await Promise.all(
       calls.map(async (call) => {
         const args: Record<string, unknown> = { ...(call.args ?? {}) };
+        if (call.name === "end_call") {
+          try { sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: { ok: true } }] }); } catch {}
+          endAfterGoodbye();
+          return;
+        }
         const action = call.name === "save_client_card" ? "card" : call.name === "add_task" ? "task" : call.name === "record_consent" ? "consent" : null;
         let result: Record<string, unknown> = { ok: false, error: "unknown_tool" };
         if (action) {
