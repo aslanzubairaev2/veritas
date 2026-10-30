@@ -161,6 +161,23 @@ export default function CallOverlay({
       sessionRef.current?.sendRealtimeInput({ text: `(Die Person hat eingetippt – ${what}: ${v})` });
     } catch {}
     transcriptRef.current.push({ role: "user", content: v });
+    // Eingetippter Name / Nummer: direkt in die Karte (der Server prüft die Einwilligung)
+    if (kind === "name" || kind === "phone") {
+      fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "card", conversationId: convRef.current, source: "call", args: { language: lang, [kind]: v } }),
+      })
+        .then((r) => r.json())
+        .then((res) => {
+          if (res?.ok) {
+            logAction(`${t.crmCardSaved}: ${v.slice(0, 40)}`, true);
+            leadRef.current = true;
+            setLeadSaved(true);
+          }
+        })
+        .catch(() => {});
+    }
     curRef.current.user = null;
     setLines((prev) => [...prev, { id: ++lineIdRef.current, who: "user" as Line["who"], text: `⌨ ${v}` }].slice(-8));
     setAsk(null);
