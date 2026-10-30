@@ -7,7 +7,7 @@ import type { Company } from "@/lib/tenant";
 import LeadForm from "./LeadForm";
 import { addCaptureWorklet, rms, toBase64 } from "@/lib/pcm";
 import { conversationId, deleteSession, devMode, listSessions, loadHistory, newSession, resetDevice, saveHistory, switchSession, type Session } from "@/lib/device";
-import { Choices, DocCard, TimePicker, parseBlocks, plainText } from "./ChatBlocks";
+import { Choices, DocCard, MapCard, TimePicker, parseBlocks, plainText } from "./ChatBlocks";
 import { LINK_HOSTS } from "@/lib/resources";
 
 const CallOverlay = dynamic(() => import("./CallOverlay"), { ssr: false });
@@ -585,6 +585,7 @@ export default function Assistant({
                 const isLast = m.id === lastAssistantId && !busy;
                 if (b.kind === "text") return <p key={bi}>{linkify(b.text.replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, ""), [companyHost])}</p>;
                 if (b.kind === "doc") return <DocCard key={bi} id={b.id} lang={lang} />;
+                if (b.kind === "map") return <MapCard key={bi} id={b.id} lang={lang} locations={company.locations} company={company.shortName} />;
                 if (b.kind === "choices") return m.final ? <Choices key={bi} options={b.options} disabled={!isLast} onPick={(v) => send(v)} /> : null;
                 if (b.kind === "time") return m.final && isLast ? <TimePicker key={bi} lang={lang} onPick={(v) => send(v)} /> : null;
                 if (b.kind === "lead" && m.final && !m.error)
@@ -699,6 +700,8 @@ export default function Assistant({
           phone={company.phone}
           phoneHref={company.phoneHref}
           conversationId={conv}
+          locations={company.locations}
+          lastAt={[...msgs].reverse().find((m) => m.at)?.at}
           history={msgs.filter((m) => !m.error && m.content).map((m) => ({ role: m.role, content: visible(m.content) }))}
           onClose={(s) => {
             setCallOpen(false);

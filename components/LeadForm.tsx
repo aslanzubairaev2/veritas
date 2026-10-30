@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { T, type Lang } from "@/lib/i18n";
 import { TimePicker } from "./ChatBlocks";
+import { formatPhone } from "@/lib/phone";
 
 export default function LeadForm({
   lang,
@@ -63,7 +64,7 @@ export default function LeadForm({
       </label>
       <label>
         <span>{t.leadPhone}</span>
-        <input name="phone" required type="tel" inputMode="tel" maxLength={40} autoComplete="tel" defaultValue={initial?.phone ?? ""} />
+        <input name="phone" required type="tel" inputMode="tel" maxLength={22} autoComplete="tel" placeholder="0151 2345 6789" defaultValue={initial?.phone ?? ""} onChange={(e) => { e.currentTarget.value = formatPhone(e.currentTarget.value); }} />
       </label>
       <div className="lead-time">
         <span>{t.leadWhen}</span>

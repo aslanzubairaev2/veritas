@@ -5,6 +5,8 @@ import { T, type Lang } from "@/lib/i18n";
 import { addCaptureWorklet, toBase64 } from "@/lib/pcm";
 import { RESOURCES, resourceFile, resourceUrl, type Resource } from "@/lib/resources";
 import { TimePicker } from "./ChatBlocks";
+import { formatPhone, phoneOk } from "@/lib/phone";
+import { mapEmbed, mapRoute, officeId, type Office } from "@/lib/offices";
 
 type Line = { who: "user" | "bot"; text: string; id: number };
 type Phase = "connecting" | "listening" | "speaking" | "ended" | "error";
@@ -23,6 +25,8 @@ export default function CallOverlay({
   phoneHref,
   conversationId,
   history,
+  lastAt,
+  locations,
   onClose,
 }: {
   lang: Lang;
@@ -31,6 +35,8 @@ export default function CallOverlay({
   phoneHref: string;
   conversationId: string;
   history: { role: "user" | "assistant"; content: string }[];
+  lastAt?: number;
+  locations: Office[];
   onClose: (summary?: { leadSaved: boolean; transcript: { role: "user" | "assistant"; content: string }[] }) => void;
 }) {
   const t = T[lang];
@@ -149,12 +155,15 @@ export default function CallOverlay({
   const asyncRef = useRef(false);
   const consentRef = useRef(false);
   const [links, setLinks] = useState<Resource[]>([]);
+  const [office, setOffice] = useState<Office | null>(null);
+  const botTurnRef = useRef("");
+  const resumeRef = useRef(false);
   // Eintippen statt Sprechen (Namen, Nummern, Zeit) – vom Assistenten angefragt oder selbst geöffnet
   const [ask, setAsk] = useState<{ kind: "name" | "phone" | "time" | "text"; label: string } | null>(null);
   const [typed, setTyped] = useState("");
 
   function submitTyped(value: string, kind: "name" | "phone" | "time" | "text") {
-    const v = value.trim().slice(0, 200);
+    const v = (kind === "phone" ? formatPhone(value) : value).trim().slice(0, 200);
     if (!v) return;
     // Hinweis in der Sprache des Gesprächs, damit das Modell nicht ins Deutsche wechselt
     const W = {
@@ -215,6 +224,18 @@ export default function CallOverlay({
           } catch {}
           return;
         }
+        if (call.name === "show_location") {
+          const o = locations.find((x) => officeId(x) === String(args.id));
+          if (o) {
+            setOffice(o);
+            transcriptRef.current.push({ role: "assistant", content: `${o.label}: ${o.address} · ${o.phone}` });
+            curRef.current.bot = null;
+          }
+          try {
+            sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: o ? { ok: true, shown: o.address } : { ok: false, error: "unknown_id" } }] });
+          } catch {}
+          return;
+        }
         if (call.name === "ask_input") {
           const kind = (["name", "phone", "time", "text"].includes(String(args.kind)) ? args.kind : "text") as "name" | "phone" | "time" | "text";
           setTyped("");
@@ -254,12 +275,14 @@ export default function CallOverlay({
               .filter(Boolean)
               .join(" · ");
             logAction(`${ok ? t.crmCardSaved : t.crmNotSaved}${what ? `: ${String(what).slice(0, 60)}` : ""}`, ok);
+            if (ok) setAsk((a) => (a && ((a.kind === "phone" && args.phone) || (a.kind === "name" && args.name)) ? null : a));
             if (ok && (args.name || args.phone)) {
               leadRef.current = true;
               setLeadSaved(true);
             }
           } else {
             logAction(`${ok ? t.crmTaskSaved : t.crmNotSaved}: ${String(args.title ?? "").slice(0, 60)}`, ok);
+            if (ok && args.due) setAsk((a) => (a?.kind === "time" ? null : a));
           }
         }
         const response: Record<string, unknown> = { id: call.id, name: call.name, response: result };
@@ -269,6 +292,21 @@ export default function CallOverlay({
         try { sessionRef.current?.sendToolResponse({ functionResponses: [response] }); } catch {}
       }),
     );
+  }
+
+  // Sagt der Assistent „… auf dem Bildschirm eintippen/auswählen“, öffnet sich das passende Feld –
+  // auch wenn das Modell vergessen hat, ask_input aufzurufen.
+  function autoOpenInput(text: string) {
+    if (!/(на экране|auf dem bildschirm|on (the )?screen)/i.test(text)) return;
+    const kind = /(телефон|номер|nummer|phone)/i.test(text)
+      ? "phone"
+      : /(врем|день|дату|zeit|termin|tag |time|day)/i.test(text)
+        ? "time"
+        : /(имя|фамили|зовут|обращаться|name|ansprechen)/i.test(text)
+          ? "name"
+          : null;
+    if (!kind) return;
+    setAsk((a) => a ?? { kind, label: "" });
   }
 
   function onMessage(msg: any) {
@@ -286,13 +324,18 @@ export default function CallOverlay({
       addText("user", sc.inputTranscription.text);
     }
     if (sc.outputTranscription?.text) {
+      botTurnRef.current += sc.outputTranscription.text;
+      autoOpenInput(botTurnRef.current);
       curRef.current.user = null;
       addText("bot", sc.outputTranscription.text);
     }
     for (const part of sc.modelTurn?.parts ?? []) {
       if (part?.inlineData?.data) playChunk(part.inlineData.data, part.inlineData.mimeType || "audio/pcm;rate=24000");
     }
-    if (sc.turnComplete) curRef.current = { user: null, bot: null };
+    if (sc.turnComplete) {
+      curRef.current = { user: null, bot: null };
+      botTurnRef.current = "";
+    }
   }
 
   function startMeter(mic: MediaStream) {
@@ -364,7 +407,7 @@ export default function CallOverlay({
         const tokenRes = await fetch("/api/live", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lang, conversationId, history: history.slice(-16) }),
+          body: JSON.stringify({ lang, conversationId, history: history.slice(-20), lastAt }),
         });
         const token = await tokenRes.json().catch(() => ({}));
         if (!tokenRes.ok || !token.token) throw new Error(token.error || "token");
@@ -453,13 +496,16 @@ export default function CallOverlay({
           if (cancelled || endedRef.current || userSpokeRef.current) return;
           try {
             sessionRef.current?.sendRealtimeInput({
-              text: "(Anruf verbunden, die Person hat noch nichts gesagt. Begrüße sie jetzt kurz, wie in den Anweisungen beschrieben.)",
+              text: resumeRef.current
+                ? "(Anruf verbunden – Fortsetzung des eben unterbrochenen Gesprächs. Nicht neu begrüßen und nicht neu vorstellen: sag kurz, dass ihr weitermacht, und knüpfe an deine letzte offene Frage an.)"
+                : "(Anruf verbunden, die Person hat noch nichts gesagt. Begrüße sie jetzt kurz, wie in den Anweisungen beschrieben.)",
             });
           } catch {}
         }, 700);
 
         setPhase("listening");
         asyncRef.current = token.asyncTools === true;
+        resumeRef.current = token.resume === true;
         if (token.consent === true) consentRef.current = true;
         const max = Number(token.maxSeconds) || 300;
         const end = Date.now() + max * 1000;
@@ -544,11 +590,20 @@ export default function CallOverlay({
           ))}
         </ul>
       )}
-      <div className="call-lines" aria-live="polite">
-        {lines.slice(-4).map((l) => (
-          <p key={l.id} className={`cl ${l.who}`}>{l.text}</p>
-        ))}
-      </div>
+      {office && (
+        <div className="call-map">
+          <iframe title={office.label} src={mapEmbed(office)} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+          <div className="call-map-info">
+            <strong>{companyName.split(" ")[0]} {office.label}</strong>
+            <span>{office.address}</span>
+            <div className="call-map-actions">
+              <a href={mapRoute(office)} target="_blank" rel="noopener noreferrer">{t.route}</a>
+              <a href={`tel:${office.phone.replace(/[^\d+]/g, "")}`}>{office.phone}</a>
+              <button type="button" className="linklike light" onClick={() => setOffice(null)}>{t.close}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {ask && phase !== "ended" && phase !== "error" && (
         <form
@@ -558,7 +613,7 @@ export default function CallOverlay({
             submitTyped(typed, ask.kind);
           }}
         >
-          {ask.label && <p>{ask.label}</p>}
+          <p>{ask.label || (ask.kind === "phone" ? t.askPhone : ask.kind === "name" ? t.askName : ask.kind === "time" ? t.askTime : t.typeIt)}</p>
           {ask.kind === "time" ? (
             <TimePicker compact lang={lang} onPick={(v) => submitTyped(v, "time")} />
           ) : (
@@ -566,18 +621,29 @@ export default function CallOverlay({
               <input
                 autoFocus
                 value={typed}
-                onChange={(e) => setTyped(e.target.value)}
+                onChange={(e) => setTyped(ask.kind === "phone" ? formatPhone(e.target.value) : e.target.value)}
                 type={ask.kind === "phone" ? "tel" : "text"}
                 inputMode={ask.kind === "phone" ? "tel" : "text"}
                 autoComplete={ask.kind === "name" ? "name" : ask.kind === "phone" ? "tel" : "off"}
-                maxLength={200}
+                autoCapitalize={ask.kind === "name" ? "words" : "off"}
+                enterKeyHint="send"
+                placeholder={ask.kind === "phone" ? "0151 2345 6789" : ask.kind === "name" ? t.leadName : ""}
+                maxLength={ask.kind === "phone" ? 22 : 200}
                 aria-label={ask.label || t.typeIt}
               />
-              <button className="btn btn-light" disabled={!typed.trim()}>{t.typeSend}</button>
+              <button className="btn btn-light" disabled={ask.kind === "phone" ? !phoneOk(typed) : !typed.trim()}>{t.typeSend}</button>
             </div>
           )}
           <button type="button" className="linklike light" onClick={() => setAsk(null)}>{t.close}</button>
         </form>
+      )}
+      {!ask && phase !== "ended" && phase !== "error" && phase !== "connecting" && (
+        <div className="call-quick" role="group" aria-label={t.typeIt}>
+          <button type="button" onClick={() => setAsk({ kind: "name", label: "" })}>✎ {t.qName}</button>
+          <button type="button" onClick={() => setAsk({ kind: "phone", label: "" })}>☎ {t.qPhone}</button>
+          <button type="button" onClick={() => setAsk({ kind: "time", label: "" })}>🕑 {t.qTime}</button>
+          <button type="button" onClick={() => setAsk({ kind: "text", label: "" })}>⌨</button>
+        </div>
       )}
       <div className="call-actions">
         {phase === "ended" || phase === "error" ? (
@@ -587,11 +653,6 @@ export default function CallOverlay({
           </>
         ) : (
           <>
-          {!ask && (
-            <button type="button" className="call-kbd" onClick={() => setAsk({ kind: "text", label: "" })} aria-label={t.typeIt} title={t.typeIt}>
-              <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M20 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg>
-            </button>
-          )}
           <button className="hangup" onClick={close} aria-label={t.callEnd}>
             <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path fill="currentColor" d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.996.996 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.27 11.27 0 0 0-2.67-1.85.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
             <span>{t.callEnd}</span>

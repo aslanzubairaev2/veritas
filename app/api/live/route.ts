@@ -17,11 +17,14 @@ export async function POST(req: Request) {
   }
   if (!rateLimit(`live:${clientIp(req)}`, 6, 60 * 60_000)) return tooMany();
 
-  const { lang, conversationId, history } = (await req.json().catch(() => ({}))) as { lang?: string; conversationId?: unknown; history?: unknown };
+  const { lang, conversationId, history, lastAt } = (await req.json().catch(() => ({}))) as { lang?: string; conversationId?: unknown; history?: unknown; lastAt?: unknown };
+  // Unterbrochenes Gespräch: letzter Beitrag vor weniger als 2 Stunden
+  const minutesAgo = typeof lastAt === "number" && lastAt > 0 ? Math.max(0, Math.round((Date.now() - lastAt) / 60_000)) : null;
+  const resume = minutesAgo !== null && minutesAgo < 120 && Array.isArray(history) && history.length > 0;
   const language = lang === "ru" || lang === "en" ? lang : "de";
   const maxSeconds = env.callMaxSeconds();
 
-  const memory = await memoryBlock(convFrom(conversationId), pastFrom(history, 16), "voice");
+  const memory = await memoryBlock(convFrom(conversationId), pastFrom(history, 20), "voice", resume ? minutesAgo : null);
 
   try {
     const params = {
@@ -57,7 +60,7 @@ export async function POST(req: Request) {
     }
     if (!token.name) throw new Error("no token name");
     return Response.json(
-      { token: token.name, model: env.liveModel(), maxSeconds, asyncTools: env.liveAsyncTools(), consent: memory.lead?.consent === true, leadId: memory.lead?.id ?? null },
+      { token: token.name, model: env.liveModel(), maxSeconds, asyncTools: env.liveAsyncTools(), consent: memory.lead?.consent === true, leadId: memory.lead?.id ?? null, resume },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {

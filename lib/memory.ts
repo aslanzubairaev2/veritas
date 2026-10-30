@@ -19,7 +19,7 @@ export function pastFrom(v: unknown, max = 16): PastMsg[] {
 }
 
 /** Abschnitt für die Anweisungen: was über diese Person schon bekannt ist. */
-export async function memoryBlock(conv: string | null, past: PastMsg[], mode: "chat" | "voice"): Promise<{ text: string; lead: LeadInfo | null }> {
+export async function memoryBlock(conv: string | null, past: PastMsg[], mode: "chat" | "voice", resumeMinutes: number | null = null): Promise<{ text: string; lead: LeadInfo | null }> {
   const lead = conv ? await getLead(conv) : null;
   if (!lead && !past.length) return { text: "", lead: null };
 
@@ -45,6 +45,9 @@ export async function memoryBlock(conv: string | null, past: PastMsg[], mode: "c
         : "- Eine Einwilligung zur Speicherung liegt noch nicht vor.",
     );
     lines.push(
+      "- Fragt die Person nach ihren gespeicherten Angaben („какой номер я назвал?“, „wie haben Sie meinen Namen notiert?“), lies sie ihr vor (Nummer langsam in Zweiergruppen) und frag, ob alles stimmt; Korrekturen sofort speichern. Das sind IHRE eigenen Daten – das ist erlaubt.",
+    );
+    lines.push(
       "- Begrüße sie als jemanden, den du kennst (mit Namen, falls bekannt), und knüpfe an: z. B. ihre Anfrage Nr. " +
         lead.id +
         " ist da, das Büro meldet sich. Frag nicht nach Dingen, die oben schon stehen.",
@@ -53,6 +56,11 @@ export async function memoryBlock(conv: string | null, past: PastMsg[], mode: "c
       mode === "voice"
         ? "- Will sie etwas ändern (anderer Name, andere Telefonnummer, neuer Rückrufzeitpunkt, neue Angaben), bestätige den neuen Wert und rufe save_client_card nur mit dem geänderten Feld auf (consent = true); bei neuem Rückrufzeitpunkt add_task. Die Anfrage bleibt dieselbe Nr. " + lead.id + "."
         : `- Will sie Name, Telefonnummer oder andere Kontaktangaben ändern, bestätige kurz und schreib am Ende ${"[[RUECKRUF]]"} – das Formular ist mit den bisherigen Angaben vorausgefüllt und ändert dieselbe Anfrage Nr. ${lead.id}.`,
+    );
+  }
+  if (resumeMinutes !== null && mode === "voice") {
+    lines.push(
+      `- FORTSETZUNG: Der letzte Kontakt war vor ${resumeMinutes} Minuten, das Gespräch wurde vermutlich unterbrochen (Verbindung abgerissen oder aufgelegt). Begrüße NICHT neu, stell dich NICHT neu vor und frag nichts erneut, was schon beantwortet ist. Sag kurz z. B. «Мы, кажется, прервались – продолжим» und knüpfe an die letzte offene Frage aus dem Verlauf an. Eine erteilte Einwilligung gilt weiter.`,
     );
   }
   if (past.length) {

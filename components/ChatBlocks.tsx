@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { Lang } from "@/lib/i18n";
 import { RESOURCES, resourceFile, resourceUrl } from "@/lib/resources";
+import { mapEmbed, mapRoute, officeId, type Office } from "@/lib/offices";
 
 // Interaktive Bausteine, die der Assistent über Marker in seine Antwort setzen kann:
 //   [[DOC:id]]          Karte eines offiziellen Formulars/Ratgebers (Link, Telefon, PDF-Download)
@@ -16,9 +17,10 @@ export type Block =
   | { kind: "doc"; id: string }
   | { kind: "choices"; options: string[] }
   | { kind: "time" }
+  | { kind: "map"; id: string }
   | { kind: "lead" };
 
-const MARKER_RE = /\[\[(DOC:([a-z_]+)|CHOICES:([^\]]{1,300})|TIME|RUECKRUF)\]\]/g;
+const MARKER_RE = /\[\[(DOC:([a-z_]+)|CHOICES:([^\]]{1,300})|MAP:([a-z]+)|TIME|RUECKRUF)\]\]/g;
 
 export function parseBlocks(content: string): Block[] {
   const out: Block[] = [];
@@ -31,7 +33,8 @@ export function parseBlocks(content: string): Block[] {
     } else if (m[3]) {
       const options = m[3].split("|").map((x) => x.trim()).filter(Boolean).slice(0, 4).map((x) => x.slice(0, 40));
       if (options.length) out.push({ kind: "choices", options });
-    } else if (m[1] === "TIME") out.push({ kind: "time" });
+    } else if (m[4]) out.push({ kind: "map", id: m[4] });
+    else if (m[1] === "TIME") out.push({ kind: "time" });
     else if (m[1] === "RUECKRUF") out.push({ kind: "lead" });
     last = i + m[0].length;
   }
@@ -80,6 +83,26 @@ export function DocCard({ id, lang }: { id: string; lang: Lang }) {
               {L[lang].open}
             </a>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const ML = { de: "Route", ru: "Маршрут", en: "Directions" };
+
+export function MapCard({ id, lang, locations, company }: { id: string; lang: Lang; locations: Office[]; company: string }) {
+  const o = locations.find((x) => officeId(x) === id);
+  if (!o) return null;
+  return (
+    <div className="map-card">
+      <iframe title={o.label} src={mapEmbed(o)} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+      <div className="map-info">
+        <strong>{company} {o.label}</strong>
+        <span>{o.address}</span>
+        <div className="doc-actions">
+          <a className="doc-btn primary" href={mapRoute(o)} target="_blank" rel="noopener noreferrer">{ML[lang]}</a>
+          <a className="doc-btn" href={`tel:${o.phone.replace(/[^\d+]/g, "")}`}>{o.phone}</a>
         </div>
       </div>
     </div>

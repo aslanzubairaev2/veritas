@@ -758,3 +758,24 @@ body { font-size: 17px; }
   display: grid; place-items: center;
 }
 .call-actions { display: flex; align-items: center; gap: 18px; justify-content: center; }
+
+/* Anruf: Karten statt Mitschrift */
+.call-map, .map-card {
+  width: 100%; max-width: 520px;
+  border-radius: 16px; overflow: hidden;
+  background: rgba(255,255,255,0.08);
+  display: flex; flex-direction: column;
+}
+.call-map iframe, .map-card iframe { width: 100%; height: 180px; border: 0; display: block; background: #dde; }
+.call-map-info, .map-info { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; font-size: 15px; }
+.call-map-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.call-map-actions a { color: #fff; font-weight: 600; }
+.map-card { background: var(--bg); border: 1px solid var(--line); max-width: none; }
+.map-card iframe { height: 160px; }
+.call-quick { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.call-quick button {
+  border: 1px solid rgba(255,255,255,0.35); background: rgba(255,255,255,0.08); color: #fff;
+  border-radius: 999px; padding: 8px 14px; font-size: 15px;
+}
+.call-type-row input::placeholder { color: #8a9a9c; }
+.call { overflow-y: auto; }
