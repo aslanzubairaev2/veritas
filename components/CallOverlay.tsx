@@ -19,13 +19,17 @@ export default function CallOverlay({
   companyName,
   phone,
   phoneHref,
+  conversationId,
+  history,
   onClose,
 }: {
   lang: Lang;
   companyName: string;
   phone: string;
   phoneHref: string;
-  onClose: (summary?: { leadSaved: boolean }) => void;
+  conversationId: string;
+  history: { role: "user" | "assistant"; content: string }[];
+  onClose: (summary?: { leadSaved: boolean; transcript: { role: "user" | "assistant"; content: string }[] }) => void;
 }) {
   const t = T[lang];
   const [phase, setPhase] = useState<Phase>("connecting");
@@ -96,6 +100,11 @@ export default function CallOverlay({
 
   function addText(who: Line["who"], text: string) {
     if (!text) return;
+    const role = who === "user" ? "user" : "assistant";
+    const tr = transcriptRef.current;
+    const isNew = curRef.current[who === "user" ? "user" : "bot"] === null;
+    if (isNew || !tr.length || tr[tr.length - 1].role !== role) tr.push({ role, content: text });
+    else tr[tr.length - 1].content += text;
     const key = who === "user" ? "user" : "bot";
     let id = curRef.current[key];
     if (id === null) {
@@ -110,9 +119,10 @@ export default function CallOverlay({
   }
 
   // Werkzeuge des Assistenten → echte Einträge im CRM (über /api/agent)
-  const convRef = useRef<string>(
-    typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `call-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
+  // Dieselbe Gesprächs-ID wie im Chat → dieselbe Kundenkarte
+  const convRef = useRef<string>(conversationId);
+  // Vollständige Mitschrift des Anrufs (für den Verlauf auf dem Gerät)
+  const transcriptRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const asyncRef = useRef(false);
   const consentRef = useRef(false);
   const userSpokeRef = useRef(false);
@@ -265,7 +275,7 @@ export default function CallOverlay({
         const tokenRes = await fetch("/api/live", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lang }),
+          body: JSON.stringify({ lang, conversationId, history: history.slice(-16) }),
         });
         const token = await tokenRes.json().catch(() => ({}));
         if (!tokenRes.ok || !token.token) throw new Error(token.error || "token");
@@ -361,6 +371,7 @@ export default function CallOverlay({
 
         setPhase("listening");
         asyncRef.current = token.asyncTools === true;
+        if (token.consent === true) consentRef.current = true;
         const max = Number(token.maxSeconds) || 300;
         const end = Date.now() + max * 1000;
         setLeft(max);
@@ -394,7 +405,10 @@ export default function CallOverlay({
 
   function close() {
     hangup();
-    onClose({ leadSaved: leadRef.current });
+    onClose({
+      leadSaved: leadRef.current,
+      transcript: transcriptRef.current.map((m) => ({ ...m, content: m.content.replace(/\s+/g, " ").trim() })).filter((m) => m.content),
+    });
   }
 
   const status =

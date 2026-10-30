@@ -1,6 +1,7 @@
 import { env } from "@/lib/env";
 import { errText } from "@/lib/gemini";
 import { chatInstructions } from "@/lib/prompt";
+import { convFrom, memoryBlock } from "@/lib/memory";
 import { streamChat, type ChatMsg } from "@/lib/llm";
 import { clientIp, rateLimit, tooMany } from "@/lib/ratelimit";
 
@@ -13,7 +14,7 @@ export async function POST(req: Request) {
   }
   if (!rateLimit(`chat:${clientIp(req)}`, 40, 10 * 60_000)) return tooMany();
 
-  let body: { messages?: unknown };
+  let body: { messages?: unknown; conversationId?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -36,7 +37,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    const stream = await streamChat(chatInstructions(), history);
+    const memory = await memoryBlock(convFrom(body.conversationId), [], "chat");
+    const stream = await streamChat(chatInstructions(memory.text), history);
     return new Response(stream, {
       headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" },
     });

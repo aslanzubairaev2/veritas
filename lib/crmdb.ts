@@ -46,3 +46,30 @@ export const snapshot = () => rpc<{ leads: unknown[]; tasks: unknown[]; events: 
 
 export const crmUpdate = (kind: "lead_status" | "task_done", id: number, value: string) =>
   rpc<null>("crm_update", { p_kind: kind, p_id: id, p_value: value });
+
+export type LeadInfo = {
+  id: number;
+  name: string | null;
+  phone: string | null;
+  district: string | null;
+  relation: string | null;
+  care_level: string | null;
+  needs: string | null;
+  concern: string | null;
+  status: "neu" | "in_arbeit" | "erledigt" | "spam";
+  consent: boolean;
+  created_at: string;
+  updated_at: string;
+  tasks: { title: string; due: string | null; done: boolean }[];
+};
+
+/** Kundenkarte zu einer Gesprächs-ID (oder null). */
+export async function getLead(conversationId: string): Promise<LeadInfo | null> {
+  if (!crmConfigured() || !/^[\w-]{8,64}$/.test(conversationId)) return null;
+  try {
+    return await rpc<LeadInfo | null>("agent_get_lead", { p_conversation: conversationId });
+  } catch (e) {
+    console.warn("getLead failed:", e instanceof Error ? e.message.slice(0, 200) : e);
+    return null;
+  }
+}

@@ -3,7 +3,17 @@
 import { useState } from "react";
 import { T, type Lang } from "@/lib/i18n";
 
-export default function LeadForm({ lang, onDone }: { lang: Lang; onDone?: () => void }) {
+export default function LeadForm({
+  lang,
+  onDone,
+  conversationId,
+  initial,
+}: {
+  lang: Lang;
+  onDone?: () => void;
+  conversationId?: string;
+  initial?: { name: string | null; phone: string | null; district: string | null } | null;
+}) {
   const t = T[lang];
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState("");
@@ -25,6 +35,7 @@ export default function LeadForm({ lang, onDone }: { lang: Lang; onDone?: () => 
           consent: f.get("consent") === "on",
           language: lang,
           source: "chat",
+          conversationId,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -45,15 +56,15 @@ export default function LeadForm({ lang, onDone }: { lang: Lang; onDone?: () => 
       <p className="lead-text">{t.leadText}</p>
       <label>
         <span>{t.leadName}</span>
-        <input name="name" required minLength={2} maxLength={80} autoComplete="name" />
+        <input name="name" required minLength={2} maxLength={80} autoComplete="name" defaultValue={initial?.name ?? ""} />
       </label>
       <label>
         <span>{t.leadPhone}</span>
-        <input name="phone" required type="tel" inputMode="tel" maxLength={40} autoComplete="tel" />
+        <input name="phone" required type="tel" inputMode="tel" maxLength={40} autoComplete="tel" defaultValue={initial?.phone ?? ""} />
       </label>
       <label>
         <span>{t.leadDistrict}</span>
-        <input name="district" maxLength={80} autoComplete="address-level2" />
+        <input name="district" maxLength={80} autoComplete="address-level2" defaultValue={initial?.district ?? ""} />
       </label>
       <label>
         <span>{t.leadConcern}</span>

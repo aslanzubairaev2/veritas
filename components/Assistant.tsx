@@ -6,10 +6,12 @@ import { BCP47, LANGS, T, detectLang, type Lang } from "@/lib/i18n";
 import type { Company } from "@/lib/tenant";
 import LeadForm from "./LeadForm";
 import { addCaptureWorklet, rms, toBase64 } from "@/lib/pcm";
+import { conversationId, forgetDevice, loadHistory, saveHistory } from "@/lib/device";
 
 const CallOverlay = dynamic(() => import("./CallOverlay"), { ssr: false });
 
-type Msg = { id: string; role: "user" | "assistant"; content: string; lead?: boolean; error?: boolean; final?: boolean };
+type Msg = { id: string; role: "user" | "assistant"; content: string; lead?: boolean; error?: boolean; final?: boolean; call?: boolean; at?: number };
+type MyLead = { id: number; name: string | null; phone: string | null; district: string | null; status: "neu" | "in_arbeit" | "erledigt" | "spam"; consent: boolean };
 type Config = { chat: boolean; voiceCall: boolean; serverSpeech: boolean };
 type MicState = "idle" | "recording" | "transcribing" | "live";
 
@@ -45,7 +47,8 @@ export default function Assistant({
   const [hint, setHint] = useState("");
   const [speaking, setSpeaking] = useState<{ id: string; phase: "loading" | "playing" } | null>(null);
   const audioCache = useRef<Map<string, string>>(new Map());
-  const [leadDone, setLeadDone] = useState(false);
+  const [conv, setConv] = useState("");
+  const [myLead, setMyLead] = useState<MyLead | null>(null);
   const [openLead, setOpenLead] = useState<string | null>(null);
   const [slow, setSlow] = useState(false);
 
@@ -55,6 +58,37 @@ export default function Assistant({
   const chunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const t = T[lang];
+
+  // Gedächtnis dieses Geräts: Verlauf + Verbindung zur eigenen Anfrage
+  useEffect(() => {
+    const id = conversationId();
+    setConv(id);
+    const past = loadHistory();
+    if (past.length) setMsgs(past.map((m) => ({ ...m, final: true })));
+    refreshLead(id);
+  }, []);
+
+  useEffect(() => {
+    if (!busy) saveHistory(msgs.filter((m) => !m.error && m.content).map(({ id, role, content, call, at }) => ({ id, role, content, call, at })));
+  }, [msgs, busy]);
+
+  async function refreshLead(id = conv) {
+    if (!id) return;
+    try {
+      const r = await fetch("/api/me", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: id }) });
+      const d = await r.json();
+      setMyLead(d?.lead ?? null);
+    } catch {}
+  }
+
+  function newConversation() {
+    if (!window.confirm(t.newChatConfirm)) return;
+    stopSpeaking();
+    forgetDevice();
+    setMsgs([]);
+    setMyLead(null);
+    setConv(conversationId());
+  }
 
   useEffect(() => {
     setLang(detectLang());
@@ -130,8 +164,8 @@ export default function Assistant({
     stopSpeaking();
     setHint("");
     setInput("");
-    const user: Msg = { id: uid(), role: "user", content: text };
-    const bot: Msg = { id: uid(), role: "assistant", content: "" };
+    const user: Msg = { id: uid(), role: "user", content: text, at: Date.now() };
+    const bot: Msg = { id: uid(), role: "assistant", content: "", at: Date.now() };
     const history = [...msgs, user];
     setMsgs([...history, bot]);
     setBusy(true);
@@ -143,6 +177,7 @@ export default function Assistant({
     try {
       const body = JSON.stringify({
         messages: history.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.content })),
+        conversationId: conv,
       });
       let res: Response | null = null;
       // Bei Überlastung (5xx) einmal automatisch neu versuchen
@@ -164,7 +199,7 @@ export default function Assistant({
         const shown = full;
         setMsgs((prev) => prev.map((m) => (m.id === bot.id ? { ...m, content: shown } : m)));
       }
-      const wantsLead = full.includes(MARKER) && !leadDone;
+      const wantsLead = full.includes(MARKER);
       setMsgs((prev) => prev.map((m) => (m.id === bot.id ? { ...m, content: full, lead: wantsLead, final: true } : m)));
     } catch (e) {
       const msg = e instanceof Error && e.message !== "error" ? e.message : t.errorGeneric;
@@ -451,7 +486,16 @@ export default function Assistant({
 
       <main className="thread" ref={threadRef} aria-live="polite">
         <section className="intro">
-          <p className="hello">{t.hello(company.shortName)}</p>
+          <p className="hello">{myLead?.name ? t.welcomeBack(myLead.name) : t.hello(company.shortName)}</p>
+
+          {myLead && (
+            <div className="my-lead" role="status">
+              <span>
+                {t.myLead(myLead.id)} · <strong>{t.leadStatus[myLead.status]}</strong>
+                {myLead.phone ? <> · {myLead.phone}</> : null}
+              </span>
+            </div>
+          )}
 
           {cfg?.voiceCall && (
             <button className="call-cta" onClick={() => setCallOpen(true)}>
@@ -481,7 +525,8 @@ export default function Assistant({
         </section>
 
         {msgs.map((m) => (
-          <div key={m.id} className={`msg ${m.role}${m.error ? " error" : ""}`}>
+          <div key={m.id} className={`msg ${m.role}${m.error ? " error" : ""}${m.call ? " via-call" : ""}`}>
+            {m.call && <span className="via-call-tag">{t.viaCall}</span>}
             {m.role === "assistant" && !m.content ? (
               <>
                 <span className="typing" aria-label={t.thinking}><i /><i /><i /></span>
@@ -490,7 +535,7 @@ export default function Assistant({
             ) : (
               <p>{m.role === "assistant" ? visible(m.content) : m.content}</p>
             )}
-            {m.role === "assistant" && m.final && !m.error && (
+            {m.role === "assistant" && m.final && !m.error && !m.call && (
               <button
                 className={`speak${speaking?.id === m.id ? ` is-${speaking.phase}` : ""}`}
                 onClick={() => speak(m.id, visible(m.content))}
@@ -504,13 +549,13 @@ export default function Assistant({
                 )}
               </button>
             )}
-            {m.lead && !leadDone &&
+            {m.lead &&
               (openLead === m.id ? (
-                <LeadForm lang={lang} onDone={() => setLeadDone(true)} />
+                <LeadForm lang={lang} conversationId={conv} initial={myLead} onDone={() => refreshLead()} />
               ) : (
                 <button className="lead-open" onClick={() => setOpenLead(m.id)}>
                   <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.3.2 2.5.57 3.6a1 1 0 0 1-.25 1z"/></svg>
-                  {t.leadOpen}
+                  {myLead ? t.leadChange : t.leadOpen}
                 </button>
               ))}
           </div>
@@ -563,6 +608,9 @@ export default function Assistant({
         </form>
         <div className="foot">
           <span className="ai-note">{t.aiNote}</span>
+          {msgs.length > 0 && (
+            <button type="button" className="new-chat" onClick={newConversation}>{t.newChat}</button>
+          )}
         </div>
       </footer>
 
@@ -584,7 +632,7 @@ export default function Assistant({
                 </li>
               ))}
             </ul>
-            {!leadDone && <LeadForm lang={lang} onDone={() => setLeadDone(true)} />}
+            <LeadForm lang={lang} conversationId={conv} initial={myLead} onDone={() => refreshLead()} />
             <p className="privacy">{t.privacy}</p>
           </div>
         </div>
@@ -596,9 +644,16 @@ export default function Assistant({
           companyName={company.name}
           phone={company.phone}
           phoneHref={company.phoneHref}
+          conversationId={conv}
+          history={msgs.filter((m) => !m.error && m.content).map((m) => ({ role: m.role, content: visible(m.content) }))}
           onClose={(s) => {
             setCallOpen(false);
-            if (s?.leadSaved) setLeadDone(true);
+            // Mitschrift des Anrufs in den Verlauf übernehmen
+            if (s?.transcript?.length) {
+              const at = Date.now();
+              setMsgs((prev) => [...prev, ...s.transcript.map((x) => ({ id: uid(), role: x.role, content: x.content, call: true, final: true, at }))]);
+            }
+            refreshLead();
           }}
         />
       )}

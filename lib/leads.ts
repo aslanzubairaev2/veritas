@@ -1,6 +1,6 @@
 import { env } from "./env";
 import { getTenant } from "./tenant";
-import { addTask, crmConfigured, upsertCard } from "./crmdb";
+import { addTask, crmConfigured, getLead, upsertCard } from "./crmdb";
 
 export type Lead = {
   name: string;
@@ -39,6 +39,7 @@ export async function deliverLead(lead: Lead): Promise<string[]> {
   if (crmConfigured()) {
     try {
       const conv = lead.conversationId || `form-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const before = lead.conversationId ? await getLead(lead.conversationId) : null;
       await upsertCard(conv, lead.source, {
         name: lead.name,
         phone: lead.phone,
@@ -47,7 +48,8 @@ export async function deliverLead(lead: Lead): Promise<string[]> {
         language: lead.language,
         consent: true,
       });
-      await addTask(conv, lead.source, "Rückruf vereinbaren", "Bürozeiten");
+      const changed = before?.phone && before.phone !== lead.phone ? ` (neue Nummer, vorher ${before.phone})` : before?.name && before.name !== lead.name ? " (Name geändert)" : "";
+      await addTask(conv, lead.source, before?.phone ? `Kontaktdaten aktualisiert – Rückruf${changed}` : "Rückruf vereinbaren", "Bürozeiten");
       delivered.push("crm");
     } catch (e) {
       console.error("CRM lead failed", e instanceof Error ? e.message.slice(0, 200) : e);

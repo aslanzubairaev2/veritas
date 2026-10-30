@@ -48,6 +48,8 @@ const TX = {
     notes: "Заметки",
     tasks: "Задачи",
     status: { neu: "Новая", in_arbeit: "В работе", erledigt: "Готово", spam: "Спам" },
+    colEmpty: "Перетащите карточку сюда",
+    spamCount: (n: number) => `В спаме: ${n}`,
     kinds: { card_created: "Создана карточка", card_updated: "Карточка дополнена", task_created: "Создана задача", lead_status: "Статус изменён", task_done: "Задача отмечена" } as Record<string, string>,
     noConsent: "без согласия на контакт",
     ago: (s: number) => (s < 60 ? `${s} с назад` : s < 3600 ? `${Math.floor(s / 60)} мин назад` : `${Math.floor(s / 3600)} ч назад`),
@@ -75,12 +77,16 @@ const TX = {
     notes: "Notizen",
     tasks: "Aufgaben",
     status: { neu: "Neu", in_arbeit: "In Arbeit", erledigt: "Erledigt", spam: "Spam" },
+    colEmpty: "Karte hierher ziehen",
+    spamCount: (n: number) => `Im Spam: ${n}`,
     kinds: { card_created: "Karte angelegt", card_updated: "Karte ergänzt", task_created: "Aufgabe angelegt", lead_status: "Status geändert", task_done: "Aufgabe abgehakt" } as Record<string, string>,
     noConsent: "ohne Kontakt-Einwilligung",
     ago: (s: number) => (s < 60 ? `vor ${s} s` : s < 3600 ? `vor ${Math.floor(s / 60)} min` : `vor ${Math.floor(s / 3600)} h`),
     error: "Keine Verbindung zur Datenbank. Neuer Versuch …",
   },
 };
+
+const COLUMNS = ["neu", "in_arbeit", "erledigt"] as const;
 
 const secondsAgo = (iso: string) => Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
 const timeOf = (iso: string) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -150,7 +156,13 @@ export default function Crm({ companyName }: { companyName: string }) {
     else setPwErr(t.wrong);
   }
 
+  const [dragOver, setDragOver] = useState<string | null>(null);
+
   async function update(kind: "lead_status" | "task_done", id: number, value: string) {
+    // sofort anzeigen, dann speichern
+    if (kind === "lead_status") {
+      setSnap((p) => (p ? { ...p, leads: p.leads.map((l) => (l.id === id ? { ...l, status: value as Lead["status"] } : l)) } : p));
+    }
     await fetch("/api/crm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, id, value }) });
     load();
   }
@@ -175,6 +187,7 @@ export default function Crm({ companyName }: { companyName: string }) {
   }
 
   const leads = snap?.leads ?? [];
+  const spamCount = leads.filter((l) => l.status === "spam").length;
   const openTasks = (snap?.tasks ?? []).filter((x) => !x.done);
   const leadName = (id: number | null) => {
     const l = leads.find((x) => x.id === id);
@@ -198,49 +211,79 @@ export default function Crm({ companyName }: { companyName: string }) {
       </header>
 
       <div className="crm-grid">
-        <section className="crm-cards" aria-label={t.title}>
+        <section className="crm-board" aria-label={t.title}>
           {snap && leads.length === 0 && <p className="crm-empty">{t.empty}</p>}
-          {leads.map((l) => (
-            <article key={l.id} className={`crm-card${fresh.has(l.id) ? " is-fresh" : ""}${l.status === "erledigt" || l.status === "spam" ? " is-done" : ""}`}>
-              <div className="crm-card-head">
-                <div>
-                  <h2>{l.name || <span className="muted">{t.unknown}</span>}</h2>
-                  <p className="crm-meta">
-                    <span className={`src src-${l.source}`}>{l.source === "call" ? t.call : t.chat}</span>
-                    {l.phone && <a href={`tel:${l.phone.replace(/[^\d+]/g, "")}`}>{l.phone}</a>}
-                    {l.language && <span>{l.language.toUpperCase()}</span>}
-                    <span title={new Date(l.updated_at).toLocaleString("de-DE")}>{t.ago(secondsAgo(l.updated_at))}</span>
-                  </p>
+          {COLUMNS.map((col) => {
+            const items = leads.filter((l) => l.status === col);
+            return (
+              <div
+                key={col}
+                className={`crm-col col-${col}${dragOver === col ? " is-over" : ""}`}
+                onDragOver={(e) => { e.preventDefault(); if (dragOver !== col) setDragOver(col); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(null);
+                  const id = Number(e.dataTransfer.getData("text/plain"));
+                  const lead = leads.find((x) => x.id === id);
+                  if (lead && lead.status !== col) update("lead_status", id, col);
+                }}
+              >
+                <h2 className="crm-col-head">
+                  {t.status[col]} <span className="crm-count">{items.length}</span>
+                </h2>
+                <div className="crm-col-body">
+                  {items.length === 0 && <p className="crm-col-empty">{t.colEmpty}</p>}
+                  {items.map((l) => (
+                <article
+                  key={l.id}
+                  draggable
+                  onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(l.id)); e.dataTransfer.effectAllowed = "move"; }}
+                  className={`crm-card${fresh.has(l.id) ? " is-fresh" : ""}${l.status === "erledigt" ? " is-done" : ""}`}>
+                  <div className="crm-card-head">
+                    <div>
+                      <h3>{l.name || <span className="muted">{t.unknown}</span>}</h3>
+                      <p className="crm-meta">
+                        <span className={`src src-${l.source}`}>{l.source === "call" ? t.call : t.chat}</span>
+                        {l.phone && <a href={`tel:${l.phone.replace(/[^\d+]/g, "")}`}>{l.phone}</a>}
+                        {l.language && <span>{l.language.toUpperCase()}</span>}
+                        <span title={new Date(l.updated_at).toLocaleString("de-DE")}>{t.ago(secondsAgo(l.updated_at))}</span>
+                      </p>
+                    </div>
+                    <select value={l.status} onChange={(e) => update("lead_status", l.id, e.target.value)} aria-label="Status">
+                      {(Object.keys(t.status) as (keyof typeof t.status)[]).map((k) => (
+                        <option key={k} value={k}>{t.status[k]}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <dl>
+                    {l.district && (<><dt>{t.district}</dt><dd>{l.district}</dd></>)}
+                    {l.relation && (<><dt>{t.relation}</dt><dd>{l.relation}</dd></>)}
+                    {l.care_level && (<><dt>{t.care}</dt><dd>{l.care_level}</dd></>)}
+                    {l.needs && (<><dt>{t.needs}</dt><dd>{l.needs}</dd></>)}
+                    {l.concern && (<><dt>{t.concern}</dt><dd>{l.concern}</dd></>)}
+                    {l.notes && (<><dt>{t.notes}</dt><dd className="pre">{l.notes}</dd></>)}
+                  </dl>
+                  {!l.consent && <p className="crm-note">{t.noConsent}</p>}
+                  {l.tasks.length > 0 && (
+                    <ul className="crm-tasks">
+                      {l.tasks.map((x) => (
+                        <li key={x.id}>
+                          <label>
+                            <input type="checkbox" checked={x.done} onChange={(e) => update("task_done", x.id, String(e.target.checked))} />
+                            <span className={x.done ? "done" : ""}>{x.title}{x.due_text ? ` — ${x.due_text}` : ""}</span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
+                  ))}
                 </div>
-                <select value={l.status} onChange={(e) => update("lead_status", l.id, e.target.value)} aria-label="Status">
-                  {(Object.keys(t.status) as (keyof typeof t.status)[]).map((k) => (
-                    <option key={k} value={k}>{t.status[k]}</option>
-                  ))}
-                </select>
               </div>
-              <dl>
-                {l.district && (<><dt>{t.district}</dt><dd>{l.district}</dd></>)}
-                {l.relation && (<><dt>{t.relation}</dt><dd>{l.relation}</dd></>)}
-                {l.care_level && (<><dt>{t.care}</dt><dd>{l.care_level}</dd></>)}
-                {l.needs && (<><dt>{t.needs}</dt><dd>{l.needs}</dd></>)}
-                {l.concern && (<><dt>{t.concern}</dt><dd>{l.concern}</dd></>)}
-                {l.notes && (<><dt>{t.notes}</dt><dd className="pre">{l.notes}</dd></>)}
-              </dl>
-              {!l.consent && <p className="crm-note">{t.noConsent}</p>}
-              {l.tasks.length > 0 && (
-                <ul className="crm-tasks">
-                  {l.tasks.map((x) => (
-                    <li key={x.id}>
-                      <label>
-                        <input type="checkbox" checked={x.done} onChange={(e) => update("task_done", x.id, String(e.target.checked))} />
-                        <span className={x.done ? "done" : ""}>{x.title}{x.due_text ? ` — ${x.due_text}` : ""}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </article>
-          ))}
+            );
+          })}
+          {spamCount > 0 && <p className="crm-spam">{t.spamCount(spamCount)}</p>}
         </section>
 
         <aside className="crm-side">

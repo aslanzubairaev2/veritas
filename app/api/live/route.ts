@@ -4,6 +4,7 @@ import { errText, gemini } from "@/lib/gemini";
 import { crmTools, voiceInstructions } from "@/lib/prompt";
 import { clientIp, rateLimit, tooMany } from "@/lib/ratelimit";
 import { VOCAB } from "@/lib/vocab";
+import { convFrom, memoryBlock, pastFrom } from "@/lib/memory";
 
 export const runtime = "nodejs";
 
@@ -16,9 +17,11 @@ export async function POST(req: Request) {
   }
   if (!rateLimit(`live:${clientIp(req)}`, 6, 60 * 60_000)) return tooMany();
 
-  const { lang } = (await req.json().catch(() => ({}))) as { lang?: string };
+  const { lang, conversationId, history } = (await req.json().catch(() => ({}))) as { lang?: string; conversationId?: unknown; history?: unknown };
   const language = lang === "ru" || lang === "en" ? lang : "de";
   const maxSeconds = env.callMaxSeconds();
+
+  const memory = await memoryBlock(convFrom(conversationId), pastFrom(history, 16), "voice");
 
   try {
     const params = {
@@ -30,7 +33,7 @@ export async function POST(req: Request) {
           model: env.liveModel(),
           config: {
             responseModalities: [Modality.AUDIO],
-            systemInstruction: voiceInstructions(language),
+            systemInstruction: voiceInstructions(language, memory.text),
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: env.liveVoice() } } },
             tools: [{ functionDeclarations: crmTools(env.liveAsyncTools()) }],
             inputAudioTranscription: {
@@ -54,7 +57,7 @@ export async function POST(req: Request) {
     }
     if (!token.name) throw new Error("no token name");
     return Response.json(
-      { token: token.name, model: env.liveModel(), maxSeconds, asyncTools: env.liveAsyncTools() },
+      { token: token.name, model: env.liveModel(), maxSeconds, asyncTools: env.liveAsyncTools(), consent: memory.lead?.consent === true, leadId: memory.lead?.id ?? null },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {

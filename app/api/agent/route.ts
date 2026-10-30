@@ -1,4 +1,4 @@
-import { addTask, crmConfigured, upsertCard, type CardData } from "@/lib/crmdb";
+import { addTask, crmConfigured, getLead, upsertCard, type CardData } from "@/lib/crmdb";
 import { errText } from "@/lib/gemini";
 import { clientIp, rateLimit, tooMany } from "@/lib/ratelimit";
 
@@ -22,7 +22,8 @@ export async function POST(req: Request) {
 
   try {
     if (body.action === "card") {
-      const consent = a.consent === true;
+      // Einwilligung aus einem früheren Gespräch auf diesem Gerät gilt weiter
+      const consent = a.consent === true || (await getLead(conversationId))?.consent === true;
       const data: CardData = {
         district: clip(a.district, 80),
         relation: clip(a.relation, 120),

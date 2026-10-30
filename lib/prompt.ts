@@ -50,8 +50,8 @@ ${knowledge.trim()}
 """`;
 }
 
-export function chatInstructions(): string {
-  return `${shared()}
+export function chatInstructions(memory = ""): string {
+  return `${shared()}${memory}
 
 FORMAT IM CHAT
 - Höchstens 130 Wörter. Ohne Überschriften und ohne Markdown-Fettdruck. Aufzählungen nur mit „• “ am Zeilenanfang.
@@ -60,7 +60,7 @@ FORMAT IM CHAT
   Die App zeigt dann ein Formular mit Einwilligung. Frag im Chat selbst nicht nach Name oder Telefonnummer.`;
 }
 
-export function voiceInstructions(lang: Lang): string {
+export function voiceInstructions(lang: Lang, memory = ""): string {
   const { company } = getTenant();
   const uiLang = lang === "ru" ? "Russisch" : lang === "en" ? "Englisch" : "Deutsch";
   const greet =
@@ -102,7 +102,7 @@ KUNDENKARTE IM CRM
 - Keine Diagnosen speichern. Unter needs nur den Hilfebedarf im Alltag.
 - Telefonnummer erst, wenn ein Rückruf vereinbart wird; Ziffer für Ziffer bestätigen lassen.
 - Meldet ein Werkzeug consent_required, hast du die Einwilligung noch nicht – frag danach.
-- Wird etwas vereinbart (Rückruf, Beratungsbesuch, Unterlagen), rufe add_task auf, mit kurzem Titel und – falls genannt – dem Zeitpunkt in Worten. Sag nur dann, dass etwas vereinbart ist, wenn add_task erfolgreich war.`;
+- Wird etwas vereinbart (Rückruf, Beratungsbesuch, Unterlagen), rufe add_task auf, mit kurzem Titel und – falls genannt – dem Zeitpunkt in Worten. Sag nur dann, dass etwas vereinbart ist, wenn add_task erfolgreich war.${memory}`;
 }
 
 // Werkzeuge des Sprachassistenten (Gemini Live, Format „functionDeclarations“).
