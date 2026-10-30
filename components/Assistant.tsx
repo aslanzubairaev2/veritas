@@ -140,6 +140,25 @@ export default function Assistant({
     openSession(conversationId());
   }
 
+  // Veraltete Seite (neue Version veröffentlicht): beim Zurückkehren neu laden, wenn gerade nichts läuft
+  const busyRef = useRef(false);
+  const callOpenRef = useRef(false);
+  useEffect(() => { busyRef.current = busy; callOpenRef.current = callOpen; });
+  useEffect(() => {
+    const mine = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "";
+    if (!mine) return;
+    const check = async () => {
+      if (document.visibilityState !== "visible" || busyRef.current || callOpenRef.current) return;
+      try {
+        const c = await fetch("/api/config", { cache: "no-store" }).then((r) => r.json());
+        if (c?.build && c.build !== mine) location.reload();
+      } catch {}
+    };
+    const id = setInterval(check, 5 * 60_000);
+    document.addEventListener("visibilitychange", check);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", check); };
+  }, []);
+
   useEffect(() => {
     setLang(detectLang());
     fetch("/api/config")

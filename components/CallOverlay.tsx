@@ -159,10 +159,20 @@ export default function CallOverlay({
   const [links, setLinks] = useState<Resource[]>([]);
   const [office, setOffice] = useState<Office | null>(null);
   const botTurnRef = useRef("");
+  // Eingabefeld: schließt sich, wenn die Person stattdessen spricht und der Assistent weitermacht
+  const askRef = useRef<{ kind: string } | null>(null);
+  const spokeWhileAskRef = useRef(false);
+  const askOpenedThisTurnRef = useRef(false);
+  // Nach dem Abschied nichts mehr abspielen (sonst hängt das Modell z. B. „The call has now ended.“ an)
+  const goodbyeDoneRef = useRef(false);
   const resumeRef = useRef(false);
   // Eintippen statt Sprechen (Namen, Nummern, Zeit) – vom Assistenten angefragt oder selbst geöffnet
   const [ask, setAsk] = useState<{ kind: "name" | "phone" | "time" | "text"; label: string } | null>(null);
   const [typed, setTyped] = useState("");
+  useEffect(() => {
+    askRef.current = ask;
+    if (ask) spokeWhileAskRef.current = false;
+  }, [ask]);
 
   function submitTyped(value: string, kind: "name" | "phone" | "time" | "text") {
     const v = (kind === "phone" ? formatPhone(value) : value).trim().slice(0, 200);
@@ -222,7 +232,7 @@ export default function CallOverlay({
             curRef.current.bot = null;
           }
           try {
-            sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: r ? { ok: true, shown: r.title.de } : { ok: false, error: "unknown_id" } }] });
+            sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: r ? { ok: true, shown: r.title.de, note: "Der Link ist sichtbar. Nicht wiederholen." } : { ok: false, error: "unknown_id" } }] });
           } catch {}
           return;
         }
@@ -241,14 +251,24 @@ export default function CallOverlay({
         if (call.name === "ask_input") {
           const kind = (["name", "phone", "time", "text"].includes(String(args.kind)) ? args.kind : "text") as "name" | "phone" | "time" | "text";
           setTyped("");
+          askOpenedThisTurnRef.current = true;
           setAsk({ kind, label: String(args.label ?? "").slice(0, 120) });
           try {
-            sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: { ok: true, shown: true } }] });
+            sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: { ok: true, shown: true, note: "Das Feld ist sichtbar. Wiederhole die Aufforderung NICHT. Die Person darf auch einfach sprechen – eine gesprochene Antwort gilt genauso." } }] });
           } catch {}
           return;
         }
         if (call.name === "end_call") {
-          try { sessionRef.current?.sendToolResponse({ functionResponses: [{ id: call.id, name: call.name, response: { ok: true } }] }); } catch {}
+          if (botTurnRef.current.trim() || lastAudioRef.current > Date.now() - 4000) {
+            // Abschied ist schon gesprochen: keine Antwort mehr senden, damit das Modell nichts anhängt
+            goodbyeDoneRef.current = true;
+          } else {
+            try {
+              sessionRef.current?.sendToolResponse({
+                functionResponses: [{ id: call.id, name: call.name, response: { ok: true, note: "Sag jetzt nur noch einen kurzen Abschiedssatz in der Sprache der Person – danach nichts mehr." } }],
+              });
+            } catch {}
+          }
           endAfterGoodbye();
           return;
         }
@@ -298,8 +318,8 @@ export default function CallOverlay({
 
   // Sagt der Assistent „… auf dem Bildschirm eintippen/auswählen“, öffnet sich das passende Feld –
   // auch wenn das Modell vergessen hat, ask_input aufzurufen.
-  function autoOpenInput(text: string) {
-    if (!/(на экране|auf dem bildschirm|on (the )?screen)/i.test(text)) return;
+  function autoOpenInput(text: string): boolean {
+    if (!/(на экране|auf dem bildschirm|on (the )?screen)/i.test(text)) return false;
     const kind = /(телефон|номер|nummer|phone)/i.test(text)
       ? "phone"
       : /(врем|день|дату|zeit|termin|tag |time|day)/i.test(text)
@@ -307,11 +327,13 @@ export default function CallOverlay({
         : /(имя|фамили|зовут|обращаться|name|ansprechen)/i.test(text)
           ? "name"
           : null;
-    if (!kind) return;
+    if (!kind) return false;
     setAsk((a) => a ?? { kind, label: "" });
+    return true;
   }
 
   function onMessage(msg: any) {
+    if (goodbyeDoneRef.current) return; // Gespräch ist zu Ende – Rest ignorieren
     if (msg?.toolCall?.functionCalls?.length) handleToolCall(msg.toolCall.functionCalls);
     const sc = msg?.serverContent;
     if (!sc) return;
@@ -322,12 +344,13 @@ export default function CallOverlay({
       setPhase("listening");
     }
     if (sc.inputTranscription?.text) {
+      if (askRef.current && sc.inputTranscription.text.replace(/[^\p{L}\d]/gu, "").length > 1) spokeWhileAskRef.current = true;
       curRef.current.bot = null;
       addText("user", sc.inputTranscription.text);
     }
     if (sc.outputTranscription?.text) {
       botTurnRef.current += sc.outputTranscription.text;
-      autoOpenInput(botTurnRef.current);
+      if (autoOpenInput(botTurnRef.current)) askOpenedThisTurnRef.current = true;
       curRef.current.user = null;
       addText("bot", sc.outputTranscription.text);
     }
@@ -335,6 +358,12 @@ export default function CallOverlay({
       if (part?.inlineData?.data) playChunk(part.inlineData.data, part.inlineData.mimeType || "audio/pcm;rate=24000");
     }
     if (sc.turnComplete) {
+      // Person hat statt zu tippen gesprochen, der Assistent hat geantwortet und das Feld nicht erneut angeboten → Feld zu
+      if (askRef.current && askRef.current.kind !== "text" && spokeWhileAskRef.current && !askOpenedThisTurnRef.current && botTurnRef.current.trim()) {
+        setAsk(null);
+      }
+      if (endingRef.current && botTurnRef.current.trim()) goodbyeDoneRef.current = true;
+      askOpenedThisTurnRef.current = false;
       curRef.current = { user: null, bot: null };
       botTurnRef.current = "";
     }
